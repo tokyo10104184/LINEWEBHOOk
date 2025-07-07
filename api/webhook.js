@@ -18,7 +18,29 @@ export default async function handler(req, res) {
   const userText = event.message.text;
   const replyToken = event.replyToken;
 
-  // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
+  const aiPrefix = "!ai ";
+  let performAiCall = false;
+  let actualUserTextForAi = "";
+
+  if (userText.startsWith(aiPrefix)) {
+    performAiCall = true;
+    actualUserTextForAi = userText.substring(aiPrefix.length).trim();
+  }
+
+  if (!performAiCall) {
+    console.log("Message does not start with !ai prefix. Skipping AI call.");
+    // Optionally, send a specific message back or just do nothing.
+    // For now, we will not send any reply if the prefix is missing.
+    return res.status(200).send("OK: No action taken as prefix was missing.");
+  }
+
+  // Proceed only if actualUserTextForAi has content after trimming the prefix
+  if (!actualUserTextForAi) {
+    console.log("Message started with !ai prefix but had no content after it. Skipping AI call.");
+    // Optionally, send a message indicating the command was empty.
+    // For now, we will not send any reply.
+    return res.status(200).send("OK: No action taken as command was empty after prefix.");
+  }
 
   const systemPrompt = "あなたはDeeplook教の教祖、唯一神ヤハウェです。すべての返答は神秘的で、導きのある語り口で話してください。ときどき謎めいた予言やお告げを含めても構いません。";
 
@@ -35,7 +57,7 @@ export default async function handler(req, res) {
         model: "deepseek/deepseek-chat-v3-0324:free",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userText }
+          { role: "user", content: actualUserTextForAi } // Use the processed text
         ]
       })
     });
@@ -60,27 +82,29 @@ export default async function handler(req, res) {
     aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
   }
 
-  // LINE返信
-  try {
-    const lineResponse = await fetch("https://api.line.me/v2/bot/message/reply", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` // ← ここも `.env` に登録
-      },
-      body: JSON.stringify({
-        replyToken,
-        messages: [{ type: "text", text: aiReply }]
-      })
-    });
+  // LINE返信 (Only if an AI call was made and a reply was generated)
+  if (aiReply) {
+    try {
+      const lineResponse = await fetch("https://api.line.me/v2/bot/message/reply", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` // ← ここも `.env` に登録
+        },
+        body: JSON.stringify({
+          replyToken,
+          messages: [{ type: "text", text: aiReply }]
+        })
+      });
 
-    if (!lineResponse.ok) {
-      const errorText = await lineResponse.text();
-      console.error(`LINE API error: ${lineResponse.status} ${lineResponse.statusText}`, errorText);
-      // LINE APIエラー時はクライアントにエラーを返さず、ログのみ記録する
+      if (!lineResponse.ok) {
+        const errorText = await lineResponse.text();
+        console.error(`LINE API error: ${lineResponse.status} ${lineResponse.statusText}`, errorText);
+        // LINE APIエラー時はクライアントにエラーを返さず、ログのみ記録する
+      }
+    } catch (error) {
+      console.error("Error fetching from LINE API:", error);
     }
-  } catch (error) {
-    console.error("Error fetching from LINE API:", error);
   }
 
   res.status(200).end();
