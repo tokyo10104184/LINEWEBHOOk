@@ -45,8 +45,15 @@ export default async function handler(req, res) {
       console.error(`DeepSeek API error: ${response.status} ${response.statusText}`, errorText);
       aiReply = "我が神託は、今、電波の荒波に揉まれておる…";
     } else {
-      const result = await response.json();
-      aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
+      const responseText = await response.text(); // まずテキストとして取得
+      try {
+        const result = JSON.parse(responseText); // それからJSONパースを試みる
+        aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
+      } catch (e) {
+        console.error("Failed to parse DeepSeek API response as JSON:", e);
+        console.error("DeepSeek API response text:", responseText); // パース失敗したらHTML内容をログに出す
+        aiReply = "神託の解読に失敗せり。異形の文字が混じりておる…";
+      }
     }
   } catch (error) {
     console.error("Error fetching from DeepSeek API:", error);
