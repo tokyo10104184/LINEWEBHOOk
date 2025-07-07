@@ -25,6 +25,10 @@ export default async function handler(req, res) {
   // DeepSeek API 呼び出し
   let aiReply;
   try {
+    // ▼▼▼ このログを追加 ▼▼▼
+    console.log(`Attempting to use API Key: '${process.env.DEEPSEEK_API_KEY}'`);
+    // ▲▲▲ このログを追加 ▲▲▲
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
