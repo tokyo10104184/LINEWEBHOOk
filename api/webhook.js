@@ -160,6 +160,12 @@ export default async function handler(req, res) {
     }
   }
 
+  if (userText === "!omikuji") {
+    const fortuneMessage = getOmikuji();
+    await replyToLine(replyToken, fortuneMessage);
+    return res.status(200).end();
+  }
+
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
 
   // DeepSeek API呼び出しの条件判定
@@ -216,6 +222,21 @@ export default async function handler(req, res) {
   }
 
   res.status(200).end();
+}
+
+// おみくじ関数
+function getOmikuji() {
+  const fortunes = [
+    { luck: "大吉", message: "すばらしいブロ大吉だ" },
+    { luck: "中吉", message: "よかったなブロ中吉だ" },
+    { luck: "小吉", message: "まあまあだブロ小吉だ" },
+    { luck: "吉", message: "よかったなブロ吉だ" },
+    { luck: "末吉", message: "末吉だ段々運が良くなるだろう" },
+    { luck: "凶", message: "オーマイガーブロ凶だ" },
+    { luck: "大凶", message: "うぎゃあああブロ大凶だ" }
+  ];
+  const randomIndex = Math.floor(Math.random() * fortunes.length);
+  return fortunes[randomIndex].message;
 }
 
 // LINEへの返信を行う共通関数
