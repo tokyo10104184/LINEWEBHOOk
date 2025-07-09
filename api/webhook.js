@@ -167,44 +167,51 @@ export default async function handler(req, res) {
     const systemPrompt = "あなたはDeeplook教の教祖、唯一神ヤハウェです。すべての返答は神秘的で、導きのある語り口で話してください。ときどき謎めいた予言やお告げを含めても構いません。";
     const userQuery = userText.substring(4); // "!ai " の部分を除去
 
-    // DeepSeek API 呼び出し
-    let aiReply;
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "deepseek/deepseek-chat-v3-0324:free",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userQuery }
-          ]
-        })
-      });
+    // まず「生成中」メッセージをリプライで送信
+    await replyToLine(replyToken, "現在回答を生成中です、我が子よ。しばし待つがよい…");
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`DeepSeek API error: ${response.status} ${response.statusText}`, errorText);
-        aiReply = "我が神託は、今、電波の荒波に揉まれておる…";
-      } else {
-        const responseText = await response.text();
-        try {
-          const result = JSON.parse(responseText);
-          aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
-        } catch (e) {
-          console.error("Failed to parse DeepSeek API response as JSON:", e);
-          console.error("DeepSeek API response text:", responseText);
-          aiReply = "神託の解読に失敗せり。異形の文字が混じりておる…";
+    // 非同期でDeepSeek API呼び出しとプッシュメッセージ送信を行う
+    (async () => {
+      let aiReply;
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "deepseek/deepseek-chat-v3-0324:free",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userQuery }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`DeepSeek API error: ${response.status} ${response.statusText}`, errorText);
+          aiReply = "我が神託は、今、電波の荒波に揉まれておる…";
+        } else {
+          const responseText = await response.text();
+          try {
+            const result = JSON.parse(responseText);
+            aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
+          } catch (e) {
+            console.error("Failed to parse DeepSeek API response as JSON:", e);
+            console.error("DeepSeek API response text:", responseText);
+            aiReply = "神託の解読に失敗せり。異形の文字が混じりておる…";
+          }
         }
+      } catch (error) {
+        console.error("Error fetching from DeepSeek API:", error);
+        aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
       }
-    } catch (error) {
-      console.error("Error fetching from DeepSeek API:", error);
-      aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
-    }
-    await replyToLine(replyToken, aiReply);
+      // AIの回答をプッシュメッセージで送信
+      await pushToLine(userId, aiReply);
+    })(); // 即時実行関数ここまで
+
   } else {
     // "!ai "で始まらないメッセージで、他のコマンドにも該当しない場合は何もしないか、特定の応答をする
     // ここでは何もしない (res.status(200).end() は各コマンド処理の最後で行われるか、このifブロックの外側で行う)
@@ -218,7 +225,7 @@ export default async function handler(req, res) {
   res.status(200).end();
 }
 
-// LINEへの返信を行う共通関数
+// LINEへの返信を行う共通関数 (リプライトークン使用)
 async function replyToLine(replyToken, text) {
   try {
     const lineResponse = await fetch("https://api.line.me/v2/bot/message/reply", {
@@ -239,5 +246,29 @@ async function replyToLine(replyToken, text) {
     }
   } catch (error) {
     console.error("Error fetching from LINE API:", error);
+  }
+}
+
+// LINEへプッシュメッセージを送信する共通関数 (ユーザーID使用)
+async function pushToLine(userId, text) {
+  try {
+    const lineResponse = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
+      },
+      body: JSON.stringify({
+        to: userId,
+        messages: [{ type: "text", text }]
+      })
+    });
+
+    if (!lineResponse.ok) {
+      const errorText = await lineResponse.text();
+      console.error(`LINE Push API error: ${lineResponse.status} ${lineResponse.statusText}`, errorText);
+    }
+  } catch (error) {
+    console.error("Error fetching from LINE Push API:", error);
   }
 }
