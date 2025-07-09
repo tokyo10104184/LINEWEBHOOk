@@ -242,9 +242,11 @@ export default async function handler(req, res) {
     // -> Vercelの標準的な動作を考慮し、awaitしないfire-and-forgetパターンに戻す。
 
     (async () => { // await を削除
-      let aiReply;
+      console.log("[AI Processing] Starting async block for user:", userId); // Log: Start async
+      let aiReply = "神託は沈黙を守っておる…"; // Default reply in case of unexpected issues
+
       try {
-        // ... (DeepSeek API呼び出し部分は変更なし) ...
+        console.log("[AI Processing] Calling DeepSeek API for user:", userId); // Log: Before DeepSeek
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -280,34 +282,53 @@ export default async function handler(req, res) {
         aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
       }
       try {
-        await pushToLine(userId, aiReply);
-      } catch (pushError) {
-        console.error("Error in AI processing async block (pushToLine call):", pushError, JSON.stringify(pushError, Object.getOwnPropertyNames(pushError)));
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[AI Processing] DeepSeek API error for user ${userId}: ${response.status} ${response.statusText}`, errorText); // Log: API Error
+          aiReply = "我が神託は、今、電波の荒波に揉まれておる…";
+        } else {
+          const responseText = await response.text();
+          console.log("[AI Processing] DeepSeek API success for user:", userId); // Log: API Success
+          try {
+            const result = JSON.parse(responseText);
+            aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
+          } catch (e) {
+            console.error("[AI Processing] Failed to parse DeepSeek API response as JSON for user:", userId, e); // Log: JSON Parse Error
+            console.error("DeepSeek API response text:", responseText);
+            aiReply = "神託の解読に失敗せり。異形の文字が混じりておる…";
+          }
+        }
+      } catch (error) {
+        console.error("[AI Processing] Outer error in fetching/parsing DeepSeek API for user:", userId, error, JSON.stringify(error, Object.getOwnPropertyNames(error))); // Log: Outer Catch Block Error
+        aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
       }
+
+      try {
+        console.log("[AI Processing] Calling pushToLine for user:", userId, "with reply:", (aiReply || "Reply is undefined").substring(0, 50) + "..."); // Log: Before Push, check aiReply
+        if (aiReply) { // Ensure aiReply has a value
+          await pushToLine(userId, aiReply);
+          console.log("[AI Processing] pushToLine finished for user:", userId); // Log: After Push
+        } else {
+          console.error("[AI Processing] aiReply was not set. Skipping pushToLine for user:", userId); // Log: aiReply not set
+          // Optionally, send a generic error message to the user via pushToLine here
+          // await pushToLine(userId, "予期せぬエラーにより、神託を伝えることができなんだ。");
+        }
+      } catch (pushError) {
+        console.error("[AI Processing] Error in pushToLine call for user:", userId, pushError, JSON.stringify(pushError, Object.getOwnPropertyNames(pushError))); // Log: Push Error
+      }
+      console.log("[AI Processing] Finished async block for user:", userId); // Log: End Async
     })();
-    // `!ai` コマンドの場合は、既にreplyToLineで応答しているので、ここでは何もせず、
-    // handler関数の最後でres.status(200).end()が呼ばれるのを待つ。
-    // ただし、他のコマンドは return res.status(200).end() で即時終了しているので、
-    // !ai の場合もここで return しないと、関数の最後で二重に res.end() を呼ぶことになる。
-    // そのため、!ai の場合もここで return するが、res.end()は呼ばないようにする。
-    // いや、全てのコマンド処理の最後で res.status(200).end() を呼び、return するのが一貫している。
-    // !ai の場合も、replyToLine の後、非同期処理を開始したらすぐに res.status(200).end() を返すべき。
     return res.status(200).end();
 
-
-  } else {
-    // "!ai "で始まらないメッセージで、他のコマンドにも該当しない場合は何もしないか、特定の応答をする
-    // ... (変更なし) ...
-    // このelseブロックは、どのコマンドにも一致しなかった場合に到達する。
-    // その場合は、何もせずにres.status(200).end()を返すのが適切。
-    // そのため、このelseブロックの最後や、このif-else ifチェーンの最後にres.status(200).end()を置く。
   }
+  // このelseは、上の if (userText.startsWith("!ai ")) に対応するものではなく、
+  // もし他のコマンドのif-else ifチェーンの最後に置くなら、という仮定のコメントだった。
+  // 現状は、!ai の処理が終わったらreturnしているので、このelseには到達しない。
+  // 正しい構造は、一連のコマンドチェックの最後に、どのコマンドでもなかった場合の処理を書く。
 
-  // 上記のいずれのif/else if条件にも一致しない場合（＝どのコマンドでもない、かつ!aiでもない）
-  // または、!ai処理後にここに到達する場合（returnしていれば到達しない）
-  // 全ての処理パスでres.end()が呼ばれることを保証するために、最後に配置する。
-  // ただし、各コマンドの末尾で return res.status(200).end() しているため、
-  // ここに到達するのは、本当にどのコマンドでもない場合のみ。
+  // ハンドラの最後で、どのコマンドにもマッチしなかった場合にデフォルトの応答をするか、何もせずに終了する。
+  // 現在は各コマンドブロックで return res.status(200).end() しているので、
+  // ここに到達するのは、どのコマンドでもない場合のみ。
   res.status(200).end();
 }
 
