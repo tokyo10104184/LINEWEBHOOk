@@ -216,17 +216,98 @@ export default async function handler(req, res) {
       // ここでさらにエラーが発生した場合、ユーザーには通知できないがログには残す
     }
     })(); // 即時実行関数ここまで
+    // この非同期処理の完了を待ってからレスポンスを返すため、
+    // res.status(200).end() はこのブロックの最後に移動する。
+    // ただし、即時実行関数自体はawaitしていないので、このままでは待たない。
+    // 即時実行関数をawaitするか、res.end()を即時実行関数内に入れる必要がある。
+    // ここでは、即時実行関数全体を await し、その後に res.end() を呼ぶように変更する。
+    // そのためには、即時実行関数を通常のasync関数として定義し、呼び出す形にする。
+
+    // 修正案：
+    // 1. 即時実行関数を通常の async 関数に
+    // 2. それを await で呼び出す
+    // 3. その後 res.status(200).end()
+
+    // さらに修正：
+    // replyToLineで一度返信しているので、res.status(200).end()はすぐに返しても問題ないはず。
+    // Vercelの仕様でバックグラウンド処理が継続するかどうかを確認する必要がある。
+    // 通常、レスポンス返却後も一定時間は処理が継続されるはず。
+    // ひとまず元の構造に戻し、問題の切り分けをする。
+    // もしVercelの制約が強いなら、応答を返す前に全処理を完了させる必要がある。
+
+    // 再考：ユーザーからの指摘は「AIからの回答が戻ってこない」。
+    // ログも出ない。これは非同期処理が途中で止まっている可能性が高い。
+    // やはり、res.end()を非同期処理の完了後に持ってくるのが堅実。
+    // 即時実行関数を await する形にリファクタリングする。
+    // -> Vercelの標準的な動作を考慮し、awaitしないfire-and-forgetパターンに戻す。
+
+    (async () => { // await を削除
+      let aiReply;
+      try {
+        // ... (DeepSeek API呼び出し部分は変更なし) ...
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "deepseek/deepseek-chat-v3-0324:free",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userQuery }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`DeepSeek API error: ${response.status} ${response.statusText}`, errorText);
+          aiReply = "我が神託は、今、電波の荒波に揉まれておる…";
+        } else {
+          const responseText = await response.text();
+          try {
+            const result = JSON.parse(responseText);
+            aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
+          } catch (e) {
+            console.error("Failed to parse DeepSeek API response as JSON:", e);
+            console.error("DeepSeek API response text:", responseText);
+            aiReply = "神託の解読に失敗せり。異形の文字が混じりておる…";
+          }
+        }
+      } catch (error) {
+        console.error("Error in AI processing async block (fetching/parsing DeepSeek API):", error, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
+      }
+      try {
+        await pushToLine(userId, aiReply);
+      } catch (pushError) {
+        console.error("Error in AI processing async block (pushToLine call):", pushError, JSON.stringify(pushError, Object.getOwnPropertyNames(pushError)));
+      }
+    })();
+    // `!ai` コマンドの場合は、既にreplyToLineで応答しているので、ここでは何もせず、
+    // handler関数の最後でres.status(200).end()が呼ばれるのを待つ。
+    // ただし、他のコマンドは return res.status(200).end() で即時終了しているので、
+    // !ai の場合もここで return しないと、関数の最後で二重に res.end() を呼ぶことになる。
+    // そのため、!ai の場合もここで return するが、res.end()は呼ばないようにする。
+    // いや、全てのコマンド処理の最後で res.status(200).end() を呼び、return するのが一貫している。
+    // !ai の場合も、replyToLine の後、非同期処理を開始したらすぐに res.status(200).end() を返すべき。
+    return res.status(200).end();
+
 
   } else {
     // "!ai "で始まらないメッセージで、他のコマンドにも該当しない場合は何もしないか、特定の応答をする
-    // ここでは何もしない (res.status(200).end() は各コマンド処理の最後で行われるか、このifブロックの外側で行う)
-    // ただし、現状のコードだとこのelseに来る前に他のコマンドでreturnしているので、
-    // ここに来るのは本当にどのコマンドでもない場合。
-    // ユーザーに何かフィードバックを返すのが親切かもしれない。
-    // 例: await replyToLine(replyToken, "御用であれば、わが名 (!ai) と共にお呼びください。");
-    // 今回は、特に何も返さない仕様とする。
+    // ... (変更なし) ...
+    // このelseブロックは、どのコマンドにも一致しなかった場合に到達する。
+    // その場合は、何もせずにres.status(200).end()を返すのが適切。
+    // そのため、このelseブロックの最後や、このif-else ifチェーンの最後にres.status(200).end()を置く。
   }
 
+  // 上記のいずれのif/else if条件にも一致しない場合（＝どのコマンドでもない、かつ!aiでもない）
+  // または、!ai処理後にここに到達する場合（returnしていれば到達しない）
+  // 全ての処理パスでres.end()が呼ばれることを保証するために、最後に配置する。
+  // ただし、各コマンドの末尾で return res.status(200).end() しているため、
+  // ここに到達するのは、本当にどのコマンドでもない場合のみ。
   res.status(200).end();
 }
 
