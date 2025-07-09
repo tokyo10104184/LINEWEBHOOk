@@ -183,32 +183,6 @@ export default async function handler(req, res) {
   }
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
-        userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
-        userStockCount += amount;
-        await kv.set(userStockKey, userStockCount);
-        await replyToLine(replyToken, `${amount}株を ${cost}ポイントで購入したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。賢明な判断じゃ。`);
-        return res.status(200).end();
-      }
-
-      if (command === "!tradesell") {
-        if (userStockCount < amount) {
-          await replyToLine(replyToken, `株が足りぬわ。${amount}株売ろうとしておるが、そなたは ${userStockCount}株しか持っておらぬぞ。`);
-          return res.status(200).end();
-        }
-        const earnings = currentStockPrice * amount;
-        userStockCount -= amount;
-        await kv.set(userStockKey, userStockCount);
-        userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
-        await replyToLine(replyToken, `${amount}株を ${earnings}ポイントで売却したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。市場を読む才があるやもしれぬな。`);
-        return res.status(200).end();
-      }
-    } else if (parts[0] === "!tradebuy" || parts[0] === "!tradesell") {
-        await replyToLine(replyToken, "取引の意志は見えるが…数量が指定されておらぬぞ。例: !tradebuy 10");
-        return res.status(200).end();
-    }
-  }
-
-  // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
 
   // DeepSeek API呼び出しの条件判定
   if (userText.startsWith("!ai ")) {
