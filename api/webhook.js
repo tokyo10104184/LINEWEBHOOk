@@ -205,11 +205,16 @@ export default async function handler(req, res) {
           }
         }
       } catch (error) {
-        console.error("Error fetching from DeepSeek API:", error);
-        aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
+      console.error("Error in AI processing async block (fetching/parsing DeepSeek API):", error, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…"; // エラー時にもこのメッセージは設定
       }
       // AIの回答をプッシュメッセージで送信
+    try {
       await pushToLine(userId, aiReply);
+    } catch (pushError) {
+      console.error("Error in AI processing async block (pushToLine call):", pushError, JSON.stringify(pushError, Object.getOwnPropertyNames(pushError)));
+      // ここでさらにエラーが発生した場合、ユーザーには通知できないがログには残す
+    }
     })(); // 即時実行関数ここまで
 
   } else {
@@ -269,6 +274,6 @@ async function pushToLine(userId, text) {
       console.error(`LINE Push API error: ${lineResponse.status} ${lineResponse.statusText}`, errorText);
     }
   } catch (error) {
-    console.error("Error fetching from LINE Push API:", error);
+    console.error("Error in pushToLine function:", error, JSON.stringify(error, Object.getOwnPropertyNames(error)));
   }
 }
