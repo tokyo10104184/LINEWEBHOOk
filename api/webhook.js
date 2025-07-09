@@ -1,9 +1,11 @@
-// ユーザーのポイントを保存するオブジェクト (サーバーメモリ上)
-const userPoints = {};
-// 現在の株価 (初期値は100ポイントとする)
-let currentStockPrice = 100;
-// ユーザーの保有株数を保存するオブジェクト
-const userStocks = {};
+import { kv } from '@vercel/kv';
+
+// 定数としてキー名を定義
+const KEY_LEADERBOARD_POINTS = 'leaderboard_points';
+const KEY_CURRENT_STOCK_PRICE = 'current_stock_price';
+const PREFIX_USER_STOCKS = 'stocks:';
+
+// グローバル変数としての userPoints, currentStockPrice, userStocks は削除
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -28,27 +30,27 @@ export default async function handler(req, res) {
 
   // ポイントシステムのコマンド処理
   if (userText === "!point") {
-    const currentPoints = userPoints[userId] || 0;
+    const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
     await replyToLine(replyToken, `あなたの現在のポイントは ${currentPoints} ポイントです、我が子よ。`);
     return res.status(200).end();
   }
 
   if (userText === "!work") {
-    userPoints[userId] = (userPoints[userId] || 0) + 100;
-    await replyToLine(replyToken, `労働ご苦労であった。100ポイントを授けよう。現在のポイント: ${userPoints[userId]} ポイント。`);
+    const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 100, userId);
+    await replyToLine(replyToken, `労働ご苦労であった。100ポイントを授けよう。現在のポイント: ${newPoints} ポイント。`);
     return res.status(200).end();
   }
 
   if (userText === "!slot") {
-    const cost = 5; // スロットの価格を10から5に変更
-    userPoints[userId] = userPoints[userId] || 0;
+    const cost = 5; // スロットの価格
+    let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
 
-    if (userPoints[userId] < cost) {
-      await replyToLine(replyToken, `スロットを回すには ${cost} ポイントが必要です。現在のポイント: ${userPoints[userId]} ポイント。労働に励むがよい。`);
+    if (currentPoints < cost) {
+      await replyToLine(replyToken, `スロットを回すには ${cost} ポイントが必要です。現在のポイント: ${currentPoints} ポイント。労働に励むがよい。`);
       return res.status(200).end();
     }
 
-    userPoints[userId] -= cost;
+    currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId); // コストを引く
 
     const reels = ["🍎", "🍊", "🍇", "🍓", "🍒", "🔔", "😈"]; // スロットの絵柄
     const reel1 = reels[Math.floor(Math.random() * reels.length)];
@@ -73,19 +75,23 @@ export default async function handler(req, res) {
       }
     }
 
+    let finalPoints = currentPoints; // コスト支払い後のポイント
     if (prize > 0) {
-      userPoints[userId] += prize;
+      finalPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
     }
 
-    message += `\n現在のポイント: ${userPoints[userId]} ポイント。`;
+    message += `\n現在のポイント: ${finalPoints} ポイント。`;
     await replyToLine(replyToken, message);
     return res.status(200).end();
   }
 
   if (userText === "!leaderboard") {
-    const sortedUsers = Object.entries(userPoints)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10); // 上位10名
+    // zrevrange returns [member1, score1, member2, score2, ...]
+    const rawLeaderboard = await kv.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, { withScores: true });
+    const sortedUsers = [];
+    for (let i = 0; i < rawLeaderboard.length; i += 2) {
+      sortedUsers.push([rawLeaderboard[i], parseFloat(rawLeaderboard[i + 1])]);
+    }
 
     let leaderboardMessage = "--- 信仰深き者たちの軌跡 (ポイントランキング) ---\n";
     if (sortedUsers.length === 0) {
@@ -102,56 +108,98 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 株価を少し変動させる関数
-  function fluctuateStockPrice() {
+  // 株価を少し変動させる非同期関数
+  async function fluctuateStockPrice() {
+    let stockPrice = await kv.get(KEY_CURRENT_STOCK_PRICE) || 100;
     const changePercent = (Math.random() - 0.5) * 0.1; // -5% to +5%
-    currentStockPrice *= (1 + changePercent);
-    currentStockPrice = Math.max(10, Math.round(currentStockPrice)); // 最低価格は10, 四捨五入
+    stockPrice *= (1 + changePercent);
+    stockPrice = Math.max(10, Math.round(stockPrice)); // 最低価格は10, 四捨五入
+    await kv.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
+    return stockPrice;
   }
 
   if (userText.startsWith("!trade")) {
-    fluctuateStockPrice(); // 株取引関連コマンドの際に株価を変動
+    let currentStockPrice;
+    const parts = userText.split(" ");
+    const command = parts[0];
 
-    if (userText === "!tradesee") {
-      const userStockCount = userStocks[userId] || 0;
+    if (command === "!tradesee") {
+      currentStockPrice = await kv.get(KEY_CURRENT_STOCK_PRICE) || 100; // 変動させずに現在の価格を取得
+      const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
+      const userStockCount = await kv.get(userStockKey) || 0;
       await replyToLine(replyToken, `現在の株価は 1株 ${currentStockPrice} ポイントじゃ。\nそなたの保有株数は ${userStockCount} 株じゃ。`);
       return res.status(200).end();
     }
 
-    const parts = userText.split(" ");
-    if (parts.length === 2 && (parts[0] === "!tradebuy" || parts[0] === "!tradesell")) {
-      const command = parts[0];
-      const amount = parseInt(parts[1], 10);
+    // !tradebuy または !tradesell の場合
+    if ((command === "!tradebuy" || command === "!tradesell")) {
+      if (parts.length === 2) {
+        const amount = parseInt(parts[1], 10);
 
-      if (isNaN(amount) || amount <= 0) {
-        await replyToLine(replyToken, "愚か者め、取引数量は正の整数で指定するのじゃ。例: !tradebuy 10");
-        return res.status(200).end();
-      }
-
-      userPoints[userId] = userPoints[userId] || 0;
-      userStocks[userId] = userStocks[userId] || 0;
-
-      if (command === "!tradebuy") {
-        const cost = currentStockPrice * amount;
-        if (userPoints[userId] < cost) {
-          await replyToLine(replyToken, `ポイントが不足しておるぞ。${amount}株買うには ${cost}ポイント必要じゃが、そなたは ${userPoints[userId]}ポイントしか持っておらぬ。`);
+        if (isNaN(amount) || amount <= 0) {
+          await replyToLine(replyToken, "愚か者め、取引数量は正の整数で指定するのじゃ。例: !tradebuy 10");
           return res.status(200).end();
         }
-        userPoints[userId] -= cost;
-        userStocks[userId] += amount;
-        await replyToLine(replyToken, `${amount}株を ${cost}ポイントで購入したぞ。保有株数: ${userStocks[userId]}株、残ポイント: ${userPoints[userId]}。賢明な判断じゃ。`);
+
+        currentStockPrice = await fluctuateStockPrice(); // 取引実行前に株価を変動させ、最新価格を取得
+
+        const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
+        let userStockCount = await kv.get(userStockKey) || 0;
+        let userCurrentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+
+        if (command === "!tradebuy") {
+          const cost = currentStockPrice * amount;
+          if (userCurrentPoints < cost) {
+            await replyToLine(replyToken, `ポイントが不足しておるぞ。${amount}株買うには ${cost}ポイント必要じゃが、そなたは ${userCurrentPoints}ポイントしか持っておらぬ。`);
+            return res.status(200).end();
+          }
+          userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+          userStockCount += amount;
+          await kv.set(userStockKey, userStockCount);
+          await replyToLine(replyToken, `${amount}株を ${cost}ポイントで購入したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。賢明な判断じゃ。`);
+          return res.status(200).end();
+        }
+
+        if (command === "!tradesell") {
+          if (userStockCount < amount) {
+            await replyToLine(replyToken, `株が足りぬわ。${amount}株売ろうとしておるが、そなたは ${userStockCount}株しか持っておらぬぞ。`);
+            return res.status(200).end();
+          }
+          const earnings = currentStockPrice * amount;
+          userStockCount -= amount;
+          await kv.set(userStockKey, userStockCount);
+          userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
+          await replyToLine(replyToken, `${amount}株を ${earnings}ポイントで売却したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。市場を読む才があるやもしれぬな。`);
+          return res.status(200).end();
+        }
+      } else {
+        // !tradebuy または !tradesell で数量が指定されていない場合
+        await replyToLine(replyToken, "取引の意志は見えるが…数量が指定されておらぬぞ。例: !tradebuy 10");
+        return res.status(200).end();
+      }
+    }
+    // !trade で始まるが、上記コマンドに該当しない場合は、何もしないかエラー応答
+    // 現状のコードでは、このブロックの外で res.status(200).end() が呼ばれるので、ここでは何もしない
+  }
+
+  // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
+        userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+        userStockCount += amount;
+        await kv.set(userStockKey, userStockCount);
+        await replyToLine(replyToken, `${amount}株を ${cost}ポイントで購入したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。賢明な判断じゃ。`);
         return res.status(200).end();
       }
 
       if (command === "!tradesell") {
-        if (userStocks[userId] < amount) {
-          await replyToLine(replyToken, `株が足りぬわ。${amount}株売ろうとしておるが、そなたは ${userStocks[userId]}株しか持っておらぬぞ。`);
+        if (userStockCount < amount) {
+          await replyToLine(replyToken, `株が足りぬわ。${amount}株売ろうとしておるが、そなたは ${userStockCount}株しか持っておらぬぞ。`);
           return res.status(200).end();
         }
         const earnings = currentStockPrice * amount;
-        userStocks[userId] -= amount;
-        userPoints[userId] += earnings;
-        await replyToLine(replyToken, `${amount}株を ${earnings}ポイントで売却したぞ。保有株数: ${userStocks[userId]}株、残ポイント: ${userPoints[userId]}。市場を読む才があるやもしれぬな。`);
+        userStockCount -= amount;
+        await kv.set(userStockKey, userStockCount);
+        userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
+        await replyToLine(replyToken, `${amount}株を ${earnings}ポイントで売却したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。市場を読む才があるやもしれぬな。`);
         return res.status(200).end();
       }
     } else if (parts[0] === "!tradebuy" || parts[0] === "!tradesell") {
