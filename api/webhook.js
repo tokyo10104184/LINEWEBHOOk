@@ -85,27 +85,61 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (userText === "!leaderboard") {
-    // zrevrange returns [member1, score1, member2, score2, ...]
-    const rawLeaderboard = await kv.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, { withScores: true });
-    const sortedUsers = [];
-    for (let i = 0; i < rawLeaderboard.length; i += 2) {
-      sortedUsers.push([rawLeaderboard[i], parseFloat(rawLeaderboard[i + 1])]);
+  if (userText === "!omikuji") {
+    const fortunes = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"];
+    const randomFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
+    let message = "";
+    switch (randomFortune) {
+      case "大吉": message = "すばらしいブロ大吉だ"; break;
+      case "中吉": message = "よかったなブロ中吉だ"; break;
+      case "小吉": message = "まあまあだブロ小吉だ"; break;
+      case "吉": message = "よかったなブロ吉だ"; break;
+      case "末吉": message = "末吉だ段々運が良くなるだろう"; break;
+      case "凶": message = "オーマイガーブロ凶だ"; break;
+      case "大凶": message = "うぎゃあああブロ大凶だ"; break;
+      default: message = "今日の運勢は…おっと、神の気まぐれじゃ。"; // ありえないはずだが念のため
     }
-
-    let leaderboardMessage = "--- 信仰深き者たちの軌跡 (ポイントランキング) ---\n";
-    if (sortedUsers.length === 0) {
-      leaderboardMessage += "まだ誰も神の試練に挑戦していないようだ…\n";
-    } else {
-      sortedUsers.forEach(([uid, points], index) => {
-        // ユーザーIDの一部を隠す (例: U123...def)
-        const maskedUserId = uid.length > 7 ? `${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}` : uid;
-        leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points} ポイント\n`;
-      });
-    }
-    leaderboardMessage += "------------------------------------";
-    await replyToLine(replyToken, leaderboardMessage);
+    await replyToLine(replyToken, message);
     return res.status(200).end();
+  }
+
+  if (userText === "!leaderboard") {
+    console.log(`[LEADERBOARD] Request received from userId: ${userId}`);
+    try {
+      console.log("[LEADERBOARD] Fetching raw leaderboard data from KV...");
+      const rawLeaderboard = await kv.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, { withScores: true });
+      console.log("[LEADERBOARD] Raw leaderboard data from KV:", JSON.stringify(rawLeaderboard));
+
+      const sortedUsers = [];
+      if (rawLeaderboard && rawLeaderboard.length > 0) {
+        for (let i = 0; i < rawLeaderboard.length; i += 2) {
+          sortedUsers.push([rawLeaderboard[i], parseFloat(rawLeaderboard[i + 1])]);
+        }
+      }
+      console.log("[LEADERBOARD] Parsed sortedUsers:", JSON.stringify(sortedUsers));
+
+      let leaderboardMessage = "--- 信仰深き者たちの軌跡 (ポイントランキング) ---\n";
+      if (sortedUsers.length === 0) {
+        leaderboardMessage += "まだ誰も神の試練に挑戦していないようだ…\n";
+      } else {
+        sortedUsers.forEach(([uid, points], index) => {
+          const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...${uid.toString().substring(uid.toString().length - 3)}` : uid.toString();
+          leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points} ポイント\n`;
+        });
+      }
+      leaderboardMessage += "------------------------------------";
+
+      console.log("[LEADERBOARD] Attempting to send message:", leaderboardMessage.substring(0, 200)); // Log first 200 chars
+      await replyToLine(replyToken, leaderboardMessage);
+      console.log("[LEADERBOARD] Message sent successfully.");
+      return res.status(200).end();
+
+    } catch (error) {
+      console.error("[LEADERBOARD] Error in !leaderboard handler:", error);
+      // ユーザーIDが含まれていると、エラーメッセージからユーザーが特定できてしまう可能性があるため、汎用的なメッセージにする
+      await replyToLine(replyToken, "リーダーボードの表示中にエラーが発生しました。しばらくしてから再度お試しください。");
+      return res.status(500).end();
+    }
   }
 
   // 株価を少し変動させる非同期関数
@@ -180,32 +214,6 @@ export default async function handler(req, res) {
     }
     // !trade で始まるが、上記コマンドに該当しない場合は、何もしないかエラー応答
     // 現状のコードでは、このブロックの外で res.status(200).end() が呼ばれるので、ここでは何もしない
-  }
-
-  // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
-        userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
-        userStockCount += amount;
-        await kv.set(userStockKey, userStockCount);
-        await replyToLine(replyToken, `${amount}株を ${cost}ポイントで購入したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。賢明な判断じゃ。`);
-        return res.status(200).end();
-      }
-
-      if (command === "!tradesell") {
-        if (userStockCount < amount) {
-          await replyToLine(replyToken, `株が足りぬわ。${amount}株売ろうとしておるが、そなたは ${userStockCount}株しか持っておらぬぞ。`);
-          return res.status(200).end();
-        }
-        const earnings = currentStockPrice * amount;
-        userStockCount -= amount;
-        await kv.set(userStockKey, userStockCount);
-        userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
-        await replyToLine(replyToken, `${amount}株を ${earnings}ポイントで売却したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。市場を読む才があるやもしれぬな。`);
-        return res.status(200).end();
-      }
-    } else if (parts[0] === "!tradebuy" || parts[0] === "!tradesell") {
-        await replyToLine(replyToken, "取引の意志は見えるが…数量が指定されておらぬぞ。例: !tradebuy 10");
-        return res.status(200).end();
-    }
   }
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
