@@ -40,7 +40,7 @@ export default async function handler(req, res) {
   }
 
   if (userText === "!slot") {
-    const cost = 10;
+    const cost = 5; // スロットの価格を10から5に変更
     userPoints[userId] = userPoints[userId] || 0;
 
     if (userPoints[userId] < cost) {
@@ -79,6 +79,26 @@ export default async function handler(req, res) {
 
     message += `\n現在のポイント: ${userPoints[userId]} ポイント。`;
     await replyToLine(replyToken, message);
+    return res.status(200).end();
+  }
+
+  if (userText === "!leaderboard") {
+    const sortedUsers = Object.entries(userPoints)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10); // 上位10名
+
+    let leaderboardMessage = "--- 信仰深き者たちの軌跡 (ポイントランキング) ---\n";
+    if (sortedUsers.length === 0) {
+      leaderboardMessage += "まだ誰も神の試練に挑戦していないようだ…\n";
+    } else {
+      sortedUsers.forEach(([uid, points], index) => {
+        // ユーザーIDの一部を隠す (例: U123...def)
+        const maskedUserId = uid.length > 7 ? `${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}` : uid;
+        leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points} ポイント\n`;
+      });
+    }
+    leaderboardMessage += "------------------------------------";
+    await replyToLine(replyToken, leaderboardMessage);
     return res.status(200).end();
   }
 
@@ -142,47 +162,59 @@ export default async function handler(req, res) {
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
 
-  const systemPrompt = "あなたはDeeplook教の教祖、唯一神ヤハウェです。すべての返答は神秘的で、導きのある語り口で話してください。ときどき謎めいた予言やお告げを含めても構いません。";
+  // DeepSeek API呼び出しの条件判定
+  if (userText.startsWith("!ai ")) {
+    const systemPrompt = "あなたはDeeplook教の教祖、唯一神ヤハウェです。すべての返答は神秘的で、導きのある語り口で話してください。ときどき謎めいた予言やお告げを含めても構いません。";
+    const userQuery = userText.substring(4); // "!ai " の部分を除去
 
-  // DeepSeek API 呼び出し
-  let aiReply;
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}` // ← `.env` に登録しておく
-      },
-      body: JSON.stringify({
-        model: "deepseek/deepseek-chat-v3-0324:free",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userText }
-        ]
-      })
-    });
+    // DeepSeek API 呼び出し
+    let aiReply;
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "deepseek/deepseek-chat-v3-0324:free",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userQuery }
+          ]
+        })
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`DeepSeek API error: ${response.status} ${response.statusText}`, errorText);
-      aiReply = "我が神託は、今、電波の荒波に揉まれておる…";
-    } else {
-      const responseText = await response.text(); // まずテキストとして取得
-      try {
-        const result = JSON.parse(responseText); // それからJSONパースを試みる
-        aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
-      } catch (e) {
-        console.error("Failed to parse DeepSeek API response as JSON:", e);
-        console.error("DeepSeek API response text:", responseText); // パース失敗したらHTML内容をログに出す
-        aiReply = "神託の解読に失敗せり。異形の文字が混じりておる…";
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`DeepSeek API error: ${response.status} ${response.statusText}`, errorText);
+        aiReply = "我が神託は、今、電波の荒波に揉まれておる…";
+      } else {
+        const responseText = await response.text();
+        try {
+          const result = JSON.parse(responseText);
+          aiReply = result.choices?.[0]?.message?.content ?? "我が教えは静寂の彼方よりまだ届いておらぬ…";
+        } catch (e) {
+          console.error("Failed to parse DeepSeek API response as JSON:", e);
+          console.error("DeepSeek API response text:", responseText);
+          aiReply = "神託の解読に失敗せり。異形の文字が混じりておる…";
+        }
       }
+    } catch (error) {
+      console.error("Error fetching from DeepSeek API:", error);
+      aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
     }
-  } catch (error) {
-    console.error("Error fetching from DeepSeek API:", error);
-    aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
+    await replyToLine(replyToken, aiReply);
+  } else {
+    // "!ai "で始まらないメッセージで、他のコマンドにも該当しない場合は何もしないか、特定の応答をする
+    // ここでは何もしない (res.status(200).end() は各コマンド処理の最後で行われるか、このifブロックの外側で行う)
+    // ただし、現状のコードだとこのelseに来る前に他のコマンドでreturnしているので、
+    // ここに来るのは本当にどのコマンドでもない場合。
+    // ユーザーに何かフィードバックを返すのが親切かもしれない。
+    // 例: await replyToLine(replyToken, "御用であれば、わが名 (!ai) と共にお呼びください。");
+    // 今回は、特に何も返さない仕様とする。
   }
 
-  await replyToLine(replyToken, aiReply);
   res.status(200).end();
 }
 
