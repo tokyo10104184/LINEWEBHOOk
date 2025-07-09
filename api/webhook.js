@@ -107,7 +107,8 @@ export default async function handler(req, res) {
     console.log(`[LEADERBOARD] Request received from userId: ${userId}`);
     try {
       console.log("[LEADERBOARD] Fetching raw leaderboard data from KV...");
-      const rawLeaderboard = await kv.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, { withScores: true });
+      // Use kv.redis.zrevrange and pass WITHSCORES as a string argument
+      const rawLeaderboard = await kv.redis.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, 'WITHSCORES');
       console.log("[LEADERBOARD] Raw leaderboard data from KV:", JSON.stringify(rawLeaderboard));
 
       const sortedUsers = [];
