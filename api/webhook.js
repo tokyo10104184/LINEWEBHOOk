@@ -8,17 +8,51 @@ const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレ�
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
 
 // 英単語リスト
-const englishWords = [
-    { english: "apple", japanese: "りんご" },
-    { english: "book", japanese: "本" },
-    { english: "car", japanese: "車" },
-    { english: "dog", japanese: "犬" },
-    { english: "eat", japanese: "食べる" },
-    { english: "friend", japanese: "友達" },
-    { english: "good", japanese: "良い" },
-    { english: "happy", japanese: "幸せな" },
-    { english: "important", japanese: "重要な" },
-    { english: "jump", japanese: "跳ぶ" },
+const easyWords = [
+    { english: "apple", japanese: "りんご" }, { english: "book", japanese: "本" },
+    { english: "car", japanese: "車" }, { english: "dog", japanese: "犬" },
+    { english: "eat", japanese: "食べる" }, { english: "friend", japanese: "友達" },
+    { english: "good", japanese: "良い" }, { english: "happy", japanese: "幸せな" },
+    { english: "jump", japanese: "跳ぶ" }, { english: "water", japanese: "水" },
+    { english: "pen", japanese: "ペン" }, { english: "cat", japanese: "猫" },
+    { english: "sun", japanese: "太陽" }, { english: "red", japanese: "赤い" },
+    { english: "big", japanese: "大きい" }, { english: "small", japanese: "小さい" },
+    { english: "run", japanese: "走る" }, { english: "see", japanese: "見る" },
+    { english: "tree", japanese: "木" }, { english: "sky", japanese: "空" },
+];
+
+const normalWords = [
+    { english: "achieve", japanese: "達成する" }, { english: "benefit", japanese: "利益" },
+    { english: "celebrate", japanese: "祝う" }, { english: "decision", japanese: "決定" },
+    { english: "effective", japanese: "効果的な" }, { english: "familiar", japanese: "よく知られた" },
+    { english: "generate", japanese: "生み出す" }, { english: "however", japanese: "しかしながら" },
+    { english: "improve", japanese: "改善する" }, { english: "journey", japanese: "旅" },
+    { english: "knowledge", japanese: "知識" }, { english: "language", japanese: "言語" },
+    { english: "measure", japanese: "測る" }, { english: "notice", japanese: "気づく" },
+    { english: "operate", japanese: "操作する" }, { english: "protect", japanese: "保護する" },
+    { english: "quality", japanese: "品質" }, { english: "receive", japanese: "受け取る" },
+    { english: "suggest", japanese: "提案する" }, { english: "technology", japanese: "科学技術" },
+    { english: "understand", japanese: "理解する" }, { english: "various", japanese: "様々な" },
+    { english: "weather", japanese: "天気" }, { english: "yesterday", japanese: "昨日" },
+    { english: "ability", japanese: "能力" }, { english: "believe", japanese: "信じる" },
+    { english: "consider", japanese: "考慮する" }, { english: "develop", japanese: "開発する" },
+    { english: "environment", japanese: "環境" }, { english: "foreign", japanese: "外国の" },
+];
+
+const hardWords = [
+    { english: "abundant", japanese: "豊富な" }, { english: "controversial", japanese: "論争の的となる" },
+    { english: "demonstrate", japanese: "実証する" }, { english: "exaggerate", japanese: "誇張する" },
+    { english: "fundamental", japanese: "基本的な" }, { english: "sophisticated", japanese: "洗練された" },
+    { english: "simultaneously", japanese: "同時に" }, { english: "reluctant", japanese: "気が進まない" },
+    { english: "profound", japanese: "深遠な" }, { english: "perspective", japanese: "視点" },
+    { english: "inevitable", japanese: "避けられない" }, { english: "implement", japanese: "実行する" },
+    { english: "hypothesis", japanese: "仮説" }, { english: "gregarious", japanese: "社交的な" },
+    { english: "fluctuate", japanese: "変動する" }, { english: "eloquent", japanese: "雄弁な" },
+    { english: "distinguish", japanese: "見分ける" }, { english: "conscientious", japanese: "誠実な" },
+    { english: "benevolent", japanese: "慈悲深い" }, { english: "anticipate", japanese: "予期する" },
+    { english: "vulnerable", japanese: "脆弱な" }, { english: "ubiquitous", japanese: "どこにでもある" },
+    { english: "tentative", japanese: "仮の" }, { english: "substantial", japanese: "かなりの" },
+    { english: "spontaneous", japanese: "自発的な" }, { english: "scrutinize", japanese: "精査する" },
 ];
 
 // グローバル変数としての userPoints, currentStockPrice, userStocks は削除
@@ -49,18 +83,17 @@ export default async function handler(req, res) {
   const gameData = await kv.get(gameKey);
 
   if (gameData && !userText.startsWith('!')) {
-    // ゲームが存在し、かつコマンドではないテキストが送られてきた場合
     const answer = userText.trim().toLowerCase();
 
     if (answer === gameData.english) {
-      const prize = 30;
+      const prize = gameData.prize;
       const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      await replyToLine(replyToken, `正解！見事なり。知恵の探求者に${prize}ポイントを授けよう。\n現在のポイント: ${newPoints}ポイント。`);
+      await replyToLine(replyToken, `正解！ ${prize}ポイント獲得！ (現在: ${newPoints}ポイント)`);
     } else {
-      await replyToLine(replyToken, `不正解。正しき答えは「${gameData.english}」であった。さらなる学びに励むがよい。`);
+      await replyToLine(replyToken, `不正解。正解は「${gameData.english}」でした。`);
     }
 
-    await kv.del(gameKey); // ゲーム状態をリセット
+    await kv.del(gameKey);
     return res.status(200).end();
   }
 
@@ -75,28 +108,28 @@ export default async function handler(req, res) {
   // ポイントシステムのコマンド処理
   if (userText === "!point") {
     const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
-    await replyToLine(replyToken, `あなたの現在のポイントは ${currentPoints} ポイントです、我が子よ。`);
+    await replyToLine(replyToken, `現在のポイント: ${currentPoints} ポイント`);
     return res.status(200).end();
   }
 
   if (userText === "!work") {
     const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
-    await replyToLine(replyToken, `労働ご苦労であった。50ポイントを授けよう。現在のポイント: ${newPoints} ポイント。`);
+    await replyToLine(replyToken, `50ポイント獲得しました。 (現在: ${newPoints} ポイント)`);
     return res.status(200).end();
   }
 
   if (userText === "!slot") {
-    const cost = 5; // スロットの価格
+    const cost = 10;
     let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
 
     if (currentPoints < cost) {
-      await replyToLine(replyToken, `スロットを回すには ${cost} ポイントが必要です。現在のポイント: ${currentPoints} ポイント。労働に励むがよい。`);
+      await replyToLine(replyToken, `スロットには${cost}ポイント必要です。 (現在: ${currentPoints}ポイント)`);
       return res.status(200).end();
     }
 
-    currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId); // コストを引く
+    currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
 
-    const reels = ["🍎", "🍊", "🍇", "😈"]; // スロットの絵柄
+    const reels = ["🍎", "🍊", "🍇", "😈"];
     const reel1 = reels[Math.floor(Math.random() * reels.length)];
     const reel2 = reels[Math.floor(Math.random() * reels.length)];
     const reel3 = reels[Math.floor(Math.random() * reels.length)];
@@ -106,25 +139,20 @@ export default async function handler(req, res) {
 
     if (reel1 === "😈" && reel2 === "😈" && reel3 === "😈") {
       prize = 1500;
-      message += `おお、悪魔の目が三つ揃うとは！ ${prize} ポイントを授けよう！`;
+      message += `大当たり！ ${prize} ポイント獲得！`;
     } else if (reel1 === reel2 && reel2 === reel3) {
       prize = 500;
-      message += `見事なり！ ${prize} ポイントを授けるぞ！`;
+      message += `当たり！ ${prize} ポイント獲得！`;
     } else {
-      // 😈が1つまたは2つ含まれていても、ゾロ目でなければハズレ
-      if (reel1 === "😈" || reel2 === "😈" || reel3 === "😈") {
-        message += "悪魔の影がちらついたが…残念、また挑戦するがよい。";
-      } else {
-        message += "残念、また挑戦するがよい。";
-      }
+      message += "残念、ハズレです。";
     }
 
-    let finalPoints = currentPoints; // コスト支払い後のポイント
+    let finalPoints = currentPoints;
     if (prize > 0) {
       finalPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
     }
 
-    message += `\n現在のポイント: ${finalPoints} ポイント。`;
+    message += ` (現在: ${finalPoints}ポイント)`;
     await replyToLine(replyToken, message);
     return res.status(200).end();
   }
@@ -132,18 +160,7 @@ export default async function handler(req, res) {
   if (userText === "!omikuji") {
     const fortunes = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"];
     const randomFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
-    let message = "";
-    switch (randomFortune) {
-      case "大吉": message = "すばらしいブロ大吉だ"; break;
-      case "中吉": message = "よかったなブロ中吉だ"; break;
-      case "小吉": message = "まあまあだブロ小吉だ"; break;
-      case "吉": message = "よかったなブロ吉だ"; break;
-      case "末吉": message = "末吉だ段々運が良くなるだろう"; break;
-      case "凶": message = "オーマイガーブロ凶だ"; break;
-      case "大凶": message = "うぎゃあああブロ大凶だ"; break;
-      default: message = "今日の運勢は…おっと、神の気まぐれじゃ。"; // ありえないはずだが念のため
-    }
-    await replyToLine(replyToken, message);
+    await replyToLine(replyToken, `おみくじの結果は「${randomFortune}」です。`);
     return res.status(200).end();
   }
 
@@ -162,16 +179,15 @@ export default async function handler(req, res) {
       }
       console.log("[LEADERBOARD] Parsed sortedUsers:", JSON.stringify(sortedUsers));
 
-      let leaderboardMessage = "--- 信仰深き者たちの軌跡 (ポイントランキング) ---\n";
+      let leaderboardMessage = "ポイントランキング\n";
       if (sortedUsers.length === 0) {
-        leaderboardMessage += "まだ誰も神の試練に挑戦していないようだ…\n";
+        leaderboardMessage += "まだランキングに誰もいません。\n";
       } else {
         sortedUsers.forEach(([uid, points], index) => {
-          const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...${uid.toString().substring(uid.toString().length - 3)}` : uid.toString();
-          leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points} ポイント\n`;
+          const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...` : uid.toString();
+          leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points}p\n`;
         });
       }
-      leaderboardMessage += "------------------------------------";
 
       console.log("[LEADERBOARD] Attempting to send message:", leaderboardMessage.substring(0, 200)); // Log first 200 chars
       await replyToLine(replyToken, leaderboardMessage);
@@ -202,10 +218,10 @@ export default async function handler(req, res) {
     const command = parts[0];
 
     if (command === "!tradesee") {
-      currentStockPrice = await kv.get(KEY_CURRENT_STOCK_PRICE) || 100; // 変動させずに現在の価格を取得
+      currentStockPrice = await kv.get(KEY_CURRENT_STOCK_PRICE) || 100;
       const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
       const userStockCount = await kv.get(userStockKey) || 0;
-      await replyToLine(replyToken, `現在の株価は 1株 ${currentStockPrice} ポイントじゃ。\nそなたの保有株数は ${userStockCount} 株じゃ。`);
+      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}p\n保有株数: ${userStockCount}株`);
       return res.status(200).end();
     }
 
@@ -215,11 +231,11 @@ export default async function handler(req, res) {
         const amount = parseInt(parts[1], 10);
 
         if (isNaN(amount) || amount <= 0) {
-          await replyToLine(replyToken, "愚か者め、取引数量は正の整数で指定するのじゃ。例: !tradebuy 10");
+          await replyToLine(replyToken, "数量は正の整数で指定してください。例: !tradebuy 10");
           return res.status(200).end();
         }
 
-        currentStockPrice = await fluctuateStockPrice(); // 取引実行前に株価を変動させ、最新価格を取得
+        currentStockPrice = await fluctuateStockPrice();
 
         const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
         let userStockCount = await kv.get(userStockKey) || 0;
@@ -228,31 +244,30 @@ export default async function handler(req, res) {
         if (command === "!tradebuy") {
           const cost = currentStockPrice * amount;
           if (userCurrentPoints < cost) {
-            await replyToLine(replyToken, `ポイントが不足しておるぞ。${amount}株買うには ${cost}ポイント必要じゃが、そなたは ${userCurrentPoints}ポイントしか持っておらぬ。`);
+            await replyToLine(replyToken, `ポイントが不足しています。(${amount}株: ${cost}p, 保有: ${userCurrentPoints}p)`);
             return res.status(200).end();
           }
           userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
           userStockCount += amount;
           await kv.set(userStockKey, userStockCount);
-          await replyToLine(replyToken, `${amount}株を ${cost}ポイントで購入したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。賢明な判断じゃ。`);
+          await replyToLine(replyToken, `${amount}株を${cost}pで購入しました。\n保有株数: ${userStockCount}株\n残ポイント: ${userCurrentPoints}p`);
           return res.status(200).end();
         }
 
         if (command === "!tradesell") {
           if (userStockCount < amount) {
-            await replyToLine(replyToken, `株が足りぬわ。${amount}株売ろうとしておるが、そなたは ${userStockCount}株しか持っておらぬぞ。`);
+            await replyToLine(replyToken, `株が不足しています。(${amount}株売却希望, 保有: ${userStockCount}株)`);
             return res.status(200).end();
           }
           const earnings = currentStockPrice * amount;
           userStockCount -= amount;
           await kv.set(userStockKey, userStockCount);
           userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
-          await replyToLine(replyToken, `${amount}株を ${earnings}ポイントで売却したぞ。保有株数: ${userStockCount}株、残ポイント: ${userCurrentPoints}。市場を読む才があるやもしれぬな。`);
+          await replyToLine(replyToken, `${amount}株を${earnings}pで売却しました。\n保有株数: ${userStockCount}株\n残ポイント: ${userCurrentPoints}p`);
           return res.status(200).end();
         }
       } else {
-        // !tradebuy または !tradesell で数量が指定されていない場合
-        await replyToLine(replyToken, "取引の意志は見えるが…数量が指定されておらぬぞ。例: !tradebuy 10");
+        await replyToLine(replyToken, "数量を指定してください。例: !tradebuy 10");
         return res.status(200).end();
       }
     }
@@ -264,7 +279,7 @@ export default async function handler(req, res) {
   if (userText.startsWith("!diceroll ")) {
     const parts = userText.split(" ");
     if (parts.length !== 3) {
-      await replyToLine(replyToken, "運命を試すか。よかろう。だが作法が違うぞ。\n例: !diceroll <1〜6の数字> <賭け金>");
+      await replyToLine(replyToken, "コマンドの形式が正しくありません。\n例: !diceroll <1〜6の数字> <賭け金>");
       return res.status(200).end();
     }
 
@@ -272,32 +287,31 @@ export default async function handler(req, res) {
     const betAmount = parseInt(parts[2], 10);
 
     if (isNaN(betNumber) || betNumber < 1 || betNumber > 6) {
-      await replyToLine(replyToken, "サイコロの目は1から6までじゃ。運命の数字を正しく選ぶのだ。");
+      await replyToLine(replyToken, "1から6の数字を選んでください。");
       return res.status(200).end();
     }
     if (isNaN(betAmount) || betAmount <= 0) {
-      await replyToLine(replyToken, "賭け金は正の整数でなくてはならぬ。神への供物は惜しんではならん。");
+      await replyToLine(replyToken, "賭け金は正の整数で指定してください。");
       return res.status(200).end();
     }
 
     let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
     if (currentPoints < betAmount) {
-      await replyToLine(replyToken, `ポイントが足りぬではないか。${betAmount}ポイント賭けるには、それ以上の信仰（ポイント）が必要じゃ。`);
+      await replyToLine(replyToken, `ポイントが不足しています。(賭け金: ${betAmount}p, 保有: ${currentPoints}p)`);
       return res.status(200).end();
     }
 
-    // ポイントを先に引く
     currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -betAmount, userId);
 
     const diceRoll = Math.floor(Math.random() * 6) + 1;
-    let message = `神のサイコロが振られた... 出た目は「${diceRoll}」！\n`;
+    let message = `サイコロの目: 「${diceRoll}」！\n`;
 
     if (betNumber === diceRoll) {
       const prize = betAmount * 6;
       const finalPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      message += `おお、見事的中じゃ！そなたの信仰に報い、${prize}ポイントを授けよう！\n現在のポイント: ${finalPoints}ポイント。`;
+      message += `的中！ ${prize}ポイント獲得！ (現在: ${finalPoints}p)`;
     } else {
-      message += `残念だったな。神の意志はそなたの予想を超えた。賭け金${betAmount}ポイントは我がもとに召し上げられた。\n現在のポイント: ${currentPoints}ポイント。`;
+      message += `ハズレ。 (現在: ${currentPoints}p)`;
     }
 
     await replyToLine(replyToken, message);
@@ -305,10 +319,15 @@ export default async function handler(req, res) {
   }
 
   // 借金と返済のコマンド処理
-  if (userText.startsWith("!borrow ")) {
-    const amount = parseInt(userText.split(" ")[1], 10);
+  if (userText.startsWith("!borrow")) {
+    const parts = userText.split(" ");
+    if (parts.length < 2) {
+      await replyToLine(replyToken, "金額を指定してください。例: !borrow 100");
+      return res.status(200).end();
+    }
+    const amount = parseInt(parts[1], 10);
     if (isNaN(amount) || amount <= 0) {
-      await replyToLine(replyToken, "愚か者よ、借り入れは正の整数で指定せよ。例: !borrow 100");
+      await replyToLine(replyToken, "借り入れは正の整数で指定してください。");
       return res.status(200).end();
     }
 
@@ -316,19 +335,22 @@ export default async function handler(req, res) {
     const interest = Math.ceil(amount * 0.1);
     const totalDebt = amount + interest;
 
-    // 現在の借金に加算
     const currentDebt = await kv.incrby(debtKey, totalDebt);
-    // ポイントを増やす
     const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, amount, userId);
 
-    await replyToLine(replyToken, `神は寛大なり。${amount}ポイントを貸し与えよう。ただし、利子として${interest}ポイントを上乗せし、合計${totalDebt}ポイントの返済を求める。心して使うがよい。\n現在の借金: ${currentDebt}ポイント\n現在のポイント: ${newPoints}ポイント`);
+    await replyToLine(replyToken, `${amount}pを借りました(利子込${totalDebt}p)。\n現在の借金: ${currentDebt}p\n現在のポイント: ${newPoints}p`);
     return res.status(200).end();
   }
 
-  if (userText.startsWith("!repay ")) {
-    const amount = parseInt(userText.split(" ")[1], 10);
+  if (userText.startsWith("!repay")) {
+    const parts = userText.split(" ");
+    if (parts.length < 2) {
+      await replyToLine(replyToken, "金額を指定してください。例: !repay 100");
+      return res.status(200).end();
+    }
+    const amount = parseInt(parts[1], 10);
     if (isNaN(amount) || amount <= 0) {
-      await replyToLine(replyToken, "返済は正の整数で行うのだ。例: !repay 100");
+      await replyToLine(replyToken, "返済は正の整数で指定してください。");
       return res.status(200).end();
     }
 
@@ -336,46 +358,61 @@ export default async function handler(req, res) {
     const currentDebt = await kv.get(debtKey) || 0;
 
     if (currentDebt === 0) {
-      await replyToLine(replyToken, "そなたに借金はない。神への信仰の証と受け取ろう。");
+      await replyToLine(replyToken, "借金はありません。");
       return res.status(200).end();
     }
 
     const currentUserPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
     if (currentUserPoints < amount) {
-      await replyToLine(replyToken, `ポイントが足りぬではないか。返済には${amount}ポイント必要だが、そなたは${currentUserPoints}ポイントしか持っておらぬ。`);
+      await replyToLine(replyToken, `ポイントが不足しています。(返済額: ${amount}p, 保有: ${currentUserPoints}p)`);
       return res.status(200).end();
     }
 
-    // ポイントを減らす
     const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -amount, userId);
 
-    // 借金を減らす
     const remainingDebt = await kv.decrby(debtKey, amount);
 
     if (remainingDebt <= 0) {
-      await kv.del(debtKey); // 借金がなくなったらキーを削除
-      await replyToLine(replyToken, `見事、借金を完済したな。${amount}ポイントを返済し、神の信頼を取り戻した。信仰の道に励むがよい。\n現在のポイント: ${newPoints}ポイント`);
+      await kv.del(debtKey);
+      await replyToLine(replyToken, `${amount}p返済し、借金がなくなりました。\n現在のポイント: ${newPoints}p`);
     } else {
-      await replyToLine(replyToken, `${amount}ポイントを返済した。だが、まだ道は半ばだ。残りの借金は${remainingDebt}ポイント。怠るでないぞ。\n現在のポイント: ${newPoints}ポイント`);
+      await replyToLine(replyToken, `${amount}p返済しました。\n残りの借金: ${remainingDebt}p\n現在のポイント: ${newPoints}p`);
     }
     return res.status(200).end();
   }
 
   // 英単語ゲームの開始コマンド
-  if (userText === "!english") {
-    const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
-    const existingGame = await kv.get(gameKey);
-    if (existingGame) {
-      await replyToLine(replyToken, `まだ前回の問いが解かれておらぬぞ。「${existingGame.japanese}」の答えは何じゃ？`);
+  if (userText.startsWith("!eng")) {
+      const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
+      const existingGame = await kv.get(gameKey);
+      if (existingGame) {
+          await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
+          return res.status(200).end();
+      }
+
+      let wordList;
+      let prize;
+      let command = userText;
+
+      if (command === "!engeasy") {
+          wordList = easyWords;
+          prize = 10;
+      } else if (command === "!eng") {
+          wordList = normalWords;
+          prize = 30;
+      } else if (command === "!enghard") {
+          wordList = hardWords;
+          prize = 50;
+      } else {
+          // !eng... だけど上記に一致しない場合は何もしない
+          return res.status(200).end();
+      }
+
+      const word = wordList[Math.floor(Math.random() * wordList.length)];
+      await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize }, { ex: 300 });
+
+      await replyToLine(replyToken, `この日本語を英訳せよ：\n\n「${word.japanese}」`);
       return res.status(200).end();
-    }
-
-    const word = englishWords[Math.floor(Math.random() * englishWords.length)];
-    // ゲームの状態を保存（正解の単語を保存）。有効期限を5分に設定。
-    await kv.set(gameKey, { english: word.english, japanese: word.japanese }, { ex: 300 });
-
-    await replyToLine(replyToken, `神の試練を与えよう。この言葉の意味を英語で答えよ：\n\n「${word.japanese}」`);
-    return res.status(200).end();
   }
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
