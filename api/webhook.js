@@ -28,6 +28,14 @@ export default async function handler(req, res) {
   const replyToken = event.replyToken;
   const userId = event.source.userId; // ユーザーIDを取得
 
+  // --- 株価のランダム変動 ---
+  // 約10%の確率で株価を変動させる
+  if (Math.random() < 0.1) {
+    // この関数はバックグラウンドで実行され、完了を待たない（応答速度を優先）
+    fluctuateStockPrice().catch(console.error);
+  }
+  // -------------------------
+
   // ポイントシステムのコマンド処理
   if (userText === "!point") {
     const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
