@@ -418,7 +418,14 @@ export default async function handler(req, res) {
       const sortedUsers = [];
       if (rawLeaderboard && rawLeaderboard.length > 0) {
         for (let i = 0; i < rawLeaderboard.length; i += 2) {
-          sortedUsers.push([rawLeaderboard[i], parseFloat(rawLeaderboard[i + 1])]);
+          const uid = rawLeaderboard[i];
+          const score = rawLeaderboard[i + 1];
+          // uidがnullやundefinedでないことを確認
+          if (uid !== null && uid !== undefined) {
+            sortedUsers.push([uid, parseFloat(score)]);
+          } else {
+            console.warn(`[LEADERBOARD] Found null or undefined userId at index ${i}, skipping.`);
+          }
         }
       }
       console.log("[LEADERBOARD] Parsed sortedUsers:", JSON.stringify(sortedUsers));
@@ -428,7 +435,9 @@ export default async function handler(req, res) {
         leaderboardMessage += "まだランキングに誰もいません。\n";
       } else {
         sortedUsers.forEach(([uid, points], index) => {
-          const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...` : uid.toString();
+          // uidを安全に文字列に変換し、マスキング処理を行う
+          const uidString = String(uid);
+          const maskedUserId = uidString.length > 7 ? `${uidString.substring(0, 4)}...` : uidString;
           leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points}p\n`;
         });
       }
