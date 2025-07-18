@@ -350,6 +350,46 @@ export default async function handler(req, res) {
   // -------------------------
 
   // ポイントシステムのコマンド処理
+  if (userText === "!help") {
+    const helpMessage = `【ポイント・基本コマンド】
+
+!point
+現在の所持ポイントを確認します。
+!work
+50ポイントを獲得します。（労働）
+!leaderboard
+ポイントランキングのトップ10を表示します。
+【ゲーム】
+
+!slot
+10ポイントを消費してスロットを回します。
+!omikuji
+おみくじを引きます。
+!diceroll <1-6の数字> <賭け金>
+サイコロの目に賭けるゲームです。当たると賭け金の6倍がもらえます。
+!engeasy / !eng / !enghard
+英単語クイズを開始します。難易度に応じて報酬が変わります。
+回答はプレフィックスなしで、英単語のみを送信してください。（例: apple）
+【金融】
+
+!borrow <金額>
+利子10%でポイントを借ります。
+!repay <金額>
+借りたポイントを返済します。
+!tradesee
+現在の株価と保有株数を確認します。
+!tradebuy <数量>
+現在の株価で株を購入します。
+!tradesell <数量>
+保有している株を売却します。
+【その他】
+
+!ai <メッセージ>
+AI（教祖）と会話できます。`;
+    await replyToLine(replyToken, helpMessage);
+    return res.status(200).end();
+  }
+
   if (userText === "!point") {
     const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
     await replyToLine(replyToken, `現在のポイント: ${currentPoints} ポイント`);
