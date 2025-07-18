@@ -4,6 +4,22 @@ import { kv } from '@vercel/kv';
 const KEY_LEADERBOARD_POINTS = 'leaderboard_points';
 const KEY_CURRENT_STOCK_PRICE = 'current_stock_price';
 const PREFIX_USER_STOCKS = 'stocks:';
+const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレフィックス
+const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
+
+// 英単語リスト
+const englishWords = [
+    { english: "apple", japanese: "りんご" },
+    { english: "book", japanese: "本" },
+    { english: "car", japanese: "車" },
+    { english: "dog", japanese: "犬" },
+    { english: "eat", japanese: "食べる" },
+    { english: "friend", japanese: "友達" },
+    { english: "good", japanese: "良い" },
+    { english: "happy", japanese: "幸せな" },
+    { english: "important", japanese: "重要な" },
+    { english: "jump", japanese: "跳ぶ" },
+];
 
 // グローバル変数としての userPoints, currentStockPrice, userStocks は削除
 
@@ -27,6 +43,26 @@ export default async function handler(req, res) {
   const userText = event.message.text;
   const replyToken = event.replyToken;
   const userId = event.source.userId; // ユーザーIDを取得
+
+  // --- 英単語ゲームの回答処理 ---
+  const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
+  const gameData = await kv.get(gameKey);
+
+  if (gameData && !userText.startsWith('!')) {
+    // ゲームが存在し、かつコマンドではないテキストが送られてきた場合
+    const answer = userText.trim().toLowerCase();
+
+    if (answer === gameData.english) {
+      const prize = 30;
+      const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+      await replyToLine(replyToken, `正解！見事なり。知恵の探求者に${prize}ポイントを授けよう。\n現在のポイント: ${newPoints}ポイント。`);
+    } else {
+      await replyToLine(replyToken, `不正解。正しき答えは「${gameData.english}」であった。さらなる学びに励むがよい。`);
+    }
+
+    await kv.del(gameKey); // ゲーム状態をリセット
+    return res.status(200).end();
+  }
 
   // --- 株価のランダム変動 ---
   // 約10%の確率で株価を変動させる
@@ -222,6 +258,124 @@ export default async function handler(req, res) {
     }
     // !trade で始まるが、上記コマンドに該当しない場合は、何もしないかエラー応答
     // 現状のコードでは、このブロックの外で res.status(200).end() が呼ばれるので、ここでは何もしない
+  }
+
+  // サイコロゲームのコマンド処理
+  if (userText.startsWith("!diceroll ")) {
+    const parts = userText.split(" ");
+    if (parts.length !== 3) {
+      await replyToLine(replyToken, "運命を試すか。よかろう。だが作法が違うぞ。\n例: !diceroll <1〜6の数字> <賭け金>");
+      return res.status(200).end();
+    }
+
+    const betNumber = parseInt(parts[1], 10);
+    const betAmount = parseInt(parts[2], 10);
+
+    if (isNaN(betNumber) || betNumber < 1 || betNumber > 6) {
+      await replyToLine(replyToken, "サイコロの目は1から6までじゃ。運命の数字を正しく選ぶのだ。");
+      return res.status(200).end();
+    }
+    if (isNaN(betAmount) || betAmount <= 0) {
+      await replyToLine(replyToken, "賭け金は正の整数でなくてはならぬ。神への供物は惜しんではならん。");
+      return res.status(200).end();
+    }
+
+    let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+    if (currentPoints < betAmount) {
+      await replyToLine(replyToken, `ポイントが足りぬではないか。${betAmount}ポイント賭けるには、それ以上の信仰（ポイント）が必要じゃ。`);
+      return res.status(200).end();
+    }
+
+    // ポイントを先に引く
+    currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -betAmount, userId);
+
+    const diceRoll = Math.floor(Math.random() * 6) + 1;
+    let message = `神のサイコロが振られた... 出た目は「${diceRoll}」！\n`;
+
+    if (betNumber === diceRoll) {
+      const prize = betAmount * 6;
+      const finalPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+      message += `おお、見事的中じゃ！そなたの信仰に報い、${prize}ポイントを授けよう！\n現在のポイント: ${finalPoints}ポイント。`;
+    } else {
+      message += `残念だったな。神の意志はそなたの予想を超えた。賭け金${betAmount}ポイントは我がもとに召し上げられた。\n現在のポイント: ${currentPoints}ポイント。`;
+    }
+
+    await replyToLine(replyToken, message);
+    return res.status(200).end();
+  }
+
+  // 借金と返済のコマンド処理
+  if (userText.startsWith("!borrow ")) {
+    const amount = parseInt(userText.split(" ")[1], 10);
+    if (isNaN(amount) || amount <= 0) {
+      await replyToLine(replyToken, "愚か者よ、借り入れは正の整数で指定せよ。例: !borrow 100");
+      return res.status(200).end();
+    }
+
+    const debtKey = `${PREFIX_USER_DEBT}${userId}`;
+    const interest = Math.ceil(amount * 0.1);
+    const totalDebt = amount + interest;
+
+    // 現在の借金に加算
+    const currentDebt = await kv.incrby(debtKey, totalDebt);
+    // ポイントを増やす
+    const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, amount, userId);
+
+    await replyToLine(replyToken, `神は寛大なり。${amount}ポイントを貸し与えよう。ただし、利子として${interest}ポイントを上乗せし、合計${totalDebt}ポイントの返済を求める。心して使うがよい。\n現在の借金: ${currentDebt}ポイント\n現在のポイント: ${newPoints}ポイント`);
+    return res.status(200).end();
+  }
+
+  if (userText.startsWith("!repay ")) {
+    const amount = parseInt(userText.split(" ")[1], 10);
+    if (isNaN(amount) || amount <= 0) {
+      await replyToLine(replyToken, "返済は正の整数で行うのだ。例: !repay 100");
+      return res.status(200).end();
+    }
+
+    const debtKey = `${PREFIX_USER_DEBT}${userId}`;
+    const currentDebt = await kv.get(debtKey) || 0;
+
+    if (currentDebt === 0) {
+      await replyToLine(replyToken, "そなたに借金はない。神への信仰の証と受け取ろう。");
+      return res.status(200).end();
+    }
+
+    const currentUserPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+    if (currentUserPoints < amount) {
+      await replyToLine(replyToken, `ポイントが足りぬではないか。返済には${amount}ポイント必要だが、そなたは${currentUserPoints}ポイントしか持っておらぬ。`);
+      return res.status(200).end();
+    }
+
+    // ポイントを減らす
+    const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -amount, userId);
+
+    // 借金を減らす
+    const remainingDebt = await kv.decrby(debtKey, amount);
+
+    if (remainingDebt <= 0) {
+      await kv.del(debtKey); // 借金がなくなったらキーを削除
+      await replyToLine(replyToken, `見事、借金を完済したな。${amount}ポイントを返済し、神の信頼を取り戻した。信仰の道に励むがよい。\n現在のポイント: ${newPoints}ポイント`);
+    } else {
+      await replyToLine(replyToken, `${amount}ポイントを返済した。だが、まだ道は半ばだ。残りの借金は${remainingDebt}ポイント。怠るでないぞ。\n現在のポイント: ${newPoints}ポイント`);
+    }
+    return res.status(200).end();
+  }
+
+  // 英単語ゲームの開始コマンド
+  if (userText === "!english") {
+    const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
+    const existingGame = await kv.get(gameKey);
+    if (existingGame) {
+      await replyToLine(replyToken, `まだ前回の問いが解かれておらぬぞ。「${existingGame.japanese}」の答えは何じゃ？`);
+      return res.status(200).end();
+    }
+
+    const word = englishWords[Math.floor(Math.random() * englishWords.length)];
+    // ゲームの状態を保存（正解の単語を保存）。有効期限を5分に設定。
+    await kv.set(gameKey, { english: word.english, japanese: word.japanese }, { ex: 300 });
+
+    await replyToLine(replyToken, `神の試練を与えよう。この言葉の意味を英語で答えよ：\n\n「${word.japanese}」`);
+    return res.status(200).end();
   }
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
