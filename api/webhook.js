@@ -36,8 +36,8 @@ export default async function handler(req, res) {
   }
 
   if (userText === "!work") {
-    const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 100, userId);
-    await replyToLine(replyToken, `労働ご苦労であった。100ポイントを授けよう。現在のポイント: ${newPoints} ポイント。`);
+    const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
+    await replyToLine(replyToken, `労働ご苦労であった。50ポイントを授けよう。現在のポイント: ${newPoints} ポイント。`);
     return res.status(200).end();
   }
 
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
 
     currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId); // コストを引く
 
-    const reels = ["🍎", "🍊", "🍇", "🍓", "🍒", "🔔", "😈"]; // スロットの絵柄
+    const reels = ["🍎", "🍊", "🍇", "😈"]; // スロットの絵柄
     const reel1 = reels[Math.floor(Math.random() * reels.length)];
     const reel2 = reels[Math.floor(Math.random() * reels.length)];
     const reel3 = reels[Math.floor(Math.random() * reels.length)];
@@ -61,10 +61,10 @@ export default async function handler(req, res) {
     let message = `${reel1}|${reel2}|${reel3}\n`;
 
     if (reel1 === "😈" && reel2 === "😈" && reel3 === "😈") {
-      prize = 300;
+      prize = 1500;
       message += `おお、悪魔の目が三つ揃うとは！ ${prize} ポイントを授けよう！`;
     } else if (reel1 === reel2 && reel2 === reel3) {
-      prize = 100;
+      prize = 500;
       message += `見事なり！ ${prize} ポイントを授けるぞ！`;
     } else {
       // 😈が1つまたは2つ含まれていても、ゾロ目でなければハズレ
