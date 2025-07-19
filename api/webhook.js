@@ -412,22 +412,18 @@ export default async function handler(req, res) {
     console.log(`[LEADERBOARD] Request received from userId: ${userId}`);
     try {
       console.log("[LEADERBOARD] Fetching raw leaderboard data from KV...");
-      const rawLeaderboard = await kv.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, { withScores: true });
-      console.log("[LEADERBOARD] Raw leaderboard data from KV:", JSON.stringify(rawLeaderboard));
-
-      const sortedUsers = [];
-      if (rawLeaderboard && rawLeaderboard.length > 0) {
-        for (let i = 0; i < rawLeaderboard.length; i += 2) {
-          sortedUsers.push([rawLeaderboard[i], parseFloat(rawLeaderboard[i + 1])]);
-        }
-      }
-      console.log("[LEADERBOARD] Parsed sortedUsers:", JSON.stringify(sortedUsers));
+      // @vercel/kv v3+ は { score: number, member: string } の配列を返す
+      const leaderboardData = await kv.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, { withScores: true });
+      console.log("[LEADERBOARD] Leaderboard data from KV:", JSON.stringify(leaderboardData));
 
       let leaderboardMessage = "ポイントランキング\n";
-      if (sortedUsers.length === 0) {
+      if (!leaderboardData || leaderboardData.length === 0) {
         leaderboardMessage += "まだランキングに誰もいません。\n";
       } else {
-        sortedUsers.forEach(([uid, points], index) => {
+        leaderboardData.forEach((entry, index) => {
+          const uid = entry.member;
+          const points = entry.score;
+          // ユーザーIDをマスクする処理はそのまま
           const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...` : uid.toString();
           leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points}p\n`;
         });
