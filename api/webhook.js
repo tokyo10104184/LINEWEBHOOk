@@ -6,6 +6,7 @@ const KEY_CURRENT_STOCK_PRICE = 'current_stock_price';
 const PREFIX_USER_STOCKS = 'stocks:';
 const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレフィックス
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
+const PREFIX_RESET_CONFIRM = 'reset_confirm:'; // ポイントリセット確認用のキープレフィックス
 
 // 英単語リスト
 const easyWords = [
@@ -315,6 +316,23 @@ export default async function handler(req, res) {
   const replyToken = event.replyToken;
   const userId = event.source.userId; // ユーザーIDを取得
 
+  // --- ポイントリセットの確認処理 ---
+  const resetConfirmKey = `${PREFIX_RESET_CONFIRM}${userId}`;
+  const isAwaitingResetConfirmation = await kv.get(resetConfirmKey);
+
+  if (isAwaitingResetConfirmation && (userText.toLowerCase() === 'はい' || userText.toLowerCase() === 'yes')) {
+    await kv.zadd(KEY_LEADERBOARD_POINTS, { score: 0, member: userId });
+    await kv.del(resetConfirmKey); // 確認キーを削除
+    await replyToLine(replyToken, "ポイントをリセットしました。");
+    return res.status(200).end();
+  } else if (isAwaitingResetConfirmation) {
+    // 「はい」以外が入力された場合は、確認をキャンセル
+    await kv.del(resetConfirmKey);
+    await replyToLine(replyToken, "ポイントリセットをキャンセルしました。");
+    return res.status(200).end();
+  }
+
+
   // --- 英単語ゲームの回答処理 ---
   const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
   const gameData = await kv.get(gameKey);
@@ -405,6 +423,13 @@ export default async function handler(req, res) {
     const fortunes = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"];
     const randomFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
     await replyToLine(replyToken, `おみくじの結果は「${randomFortune}」です。`);
+    return res.status(200).end();
+  }
+
+  if (userText === "!reset") {
+    const resetConfirmKey = `${PREFIX_RESET_CONFIRM}${userId}`;
+    await kv.set(resetConfirmKey, true, { ex: 60 }); // 60秒間確認状態を保持
+    await replyToLine(replyToken, "本当にポイントをリセットしますか？\n「はい」と入力してください。");
     return res.status(200).end();
   }
 
@@ -573,6 +598,12 @@ export default async function handler(req, res) {
     if (isNaN(amount) || amount <= 0) {
       await replyToLine(replyToken, "借り入れは正の整数で指定してください。");
       return res.status(200).end();
+    }
+
+    const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+    if (amount > currentPoints) {
+        await replyToLine(replyToken, `所持ポイント(${currentPoints}p)を超える金額は借りられません。`);
+        return res.status(200).end();
     }
 
     const debtKey = `${PREFIX_USER_DEBT}${userId}`;
