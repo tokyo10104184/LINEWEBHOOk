@@ -433,6 +433,76 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (userText.startsWith("!help")) {
+    const parts = userText.split(" ");
+    const category = parts[1];
+
+    if (!category) {
+      const helpText = "我が力を知りたいか？\n項目を選ぶのじゃ。";
+      const quickReply = {
+        items: [
+          {
+            type: "action",
+            action: {
+              type: "message",
+              label: "ポイント関連",
+              text: "!help ポイント"
+            }
+          },
+          {
+            type: "action",
+            action: {
+              type: "message",
+              label: "ゲーム関連",
+              text: "!help ゲーム"
+            }
+          },
+          {
+              type: "action",
+              action: {
+                type: "message",
+                label: "その他",
+                text: "!help その他"
+              }
+          }
+        ]
+      };
+      await replyToLine(replyToken, helpText, quickReply);
+    } else {
+      let helpMessage = "";
+      switch (category) {
+        case "ポイント":
+          helpMessage = "--- ポイント関連の我が力 ---\n" +
+                        "!point : 汝のポイントを見る\n" +
+                        "!work : 労働の対価(50p)を得る\n" +
+                        "!leaderboard : 信徒の階梯を見る\n" +
+                        "!borrow <金額> : pを借りる(1割の利子)\n" +
+                        "!repay <金額> : 借金を返す\n" +
+                        "!reset : 全てを無に帰す";
+          break;
+        case "ゲーム":
+          helpMessage = "--- 遊戯関連の我が力 ---\n" +
+                        "!slot : スロット(1回10p)\n" +
+                        "!diceroll <1-6> <賭け金> : サイコロ博打\n" +
+                        "!omikuji : 神託を授かる\n" +
+                        "!eng, !engeasy, !enghard : 英単語の試練";
+          break;
+        case "その他":
+          helpMessage = "--- その他の我が力 ---\n" +
+                        "!tradebuy <数量> : 株を買う\n" +
+                        "!tradesell <数量> : 株を売る\n" +
+                        "!tradesee : 株価と持ち株を見る\n" +
+                        "!ai <文> : 我と話す";
+          break;
+        default:
+          helpMessage = `「${category}」...？\nそのような項目はないぞ。`;
+          break;
+      }
+      await replyToLine(replyToken, helpMessage);
+    }
+    return res.status(200).end();
+  }
+
   if (userText === "!leaderboard") {
     console.log(`[LEADERBOARD] Request received from userId: ${userId}`);
     try {
@@ -749,7 +819,16 @@ export default async function handler(req, res) {
 }
 
 // LINEへの返信を行う共通関数
-async function replyToLine(replyToken, text) {
+async function replyToLine(replyToken, text, quickReply = null) {
+  const message = {
+    type: "text",
+    text: text,
+  };
+
+  if (quickReply) {
+    message.quickReply = quickReply;
+  }
+
   try {
     const lineResponse = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
@@ -759,7 +838,7 @@ async function replyToLine(replyToken, text) {
       },
       body: JSON.stringify({
         replyToken,
-        messages: [{ type: "text", text }]
+        messages: [message]
       })
     });
 
