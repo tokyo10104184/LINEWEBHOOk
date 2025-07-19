@@ -6,6 +6,7 @@ const KEY_CURRENT_STOCK_PRICE = 'current_stock_price';
 const PREFIX_USER_STOCKS = 'stocks:';
 const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレフィックス
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
+const PREFIX_RESET_CONFIRM = 'reset_confirm:'; // ポイントリセット確認用のキープレフィックス
 
 // 英単語リスト
 const easyWords = [
@@ -315,6 +316,23 @@ export default async function handler(req, res) {
   const replyToken = event.replyToken;
   const userId = event.source.userId; // ユーザーIDを取得
 
+  // --- ポイントリセットの確認処理 ---
+  const resetConfirmKey = `${PREFIX_RESET_CONFIRM}${userId}`;
+  const isAwaitingResetConfirmation = await kv.get(resetConfirmKey);
+
+  if (isAwaitingResetConfirmation && (userText.toLowerCase() === 'はい' || userText.toLowerCase() === 'yes')) {
+    await kv.zadd(KEY_LEADERBOARD_POINTS, { score: 0, member: userId });
+    await kv.del(resetConfirmKey); // 確認キーを削除
+    await replyToLine(replyToken, "よかろう。全てを無に帰した。");
+    return res.status(200).end();
+  } else if (isAwaitingResetConfirmation) {
+    // 「はい」以外が入力された場合は、確認をキャンセル
+    await kv.del(resetConfirmKey);
+    await replyToLine(replyToken, "リセットは取り消された。賢明な判断じゃ。");
+    return res.status(200).end();
+  }
+
+
   // --- 英単語ゲームの回答処理 ---
   const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
   const gameData = await kv.get(gameKey);
@@ -330,11 +348,11 @@ export default async function handler(req, res) {
     if (isCorrect) {
       const prize = gameData.prize;
       const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      await replyToLine(replyToken, `正解！ ${prize}ポイント獲得！ (現在: ${newPoints}ポイント)`);
+      await replyToLine(replyToken, `正解じゃ！ ${prize}ポイント授けよう！ (今: ${newPoints}p)`);
     } else {
       // 不正解の場合、正解の単語（配列の場合は最初の単語）を提示
       const correctAnswer = Array.isArray(gameData.english) ? gameData.english[0] : gameData.english;
-      await replyToLine(replyToken, `不正解。正解は「${correctAnswer}」でした。`);
+      await replyToLine(replyToken, `不正解じゃ。正解は「${correctAnswer}」であった。`);
     }
 
     await kv.del(gameKey);
@@ -352,13 +370,13 @@ export default async function handler(req, res) {
   // ポイントシステムのコマンド処理
   if (userText === "!point") {
     const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
-    await replyToLine(replyToken, `現在のポイント: ${currentPoints} ポイント`);
+    await replyToLine(replyToken, `汝のポイント: ${currentPoints} p じゃ。`);
     return res.status(200).end();
   }
 
   if (userText === "!work") {
     const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
-    await replyToLine(replyToken, `50ポイント獲得しました。 (現在: ${newPoints} ポイント)`);
+    await replyToLine(replyToken, `労働ご苦労。50p授けよう。 (今: ${newPoints} p)`);
     return res.status(200).end();
   }
 
@@ -367,7 +385,7 @@ export default async function handler(req, res) {
     let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
 
     if (currentPoints < cost) {
-      await replyToLine(replyToken, `スロットには${cost}ポイント必要です。 (現在: ${currentPoints}ポイント)`);
+      await replyToLine(replyToken, `スロットには${cost}p必要じゃ。 (今: ${currentPoints}p)`);
       return res.status(200).end();
     }
 
@@ -383,12 +401,12 @@ export default async function handler(req, res) {
 
     if (reel1 === "😈" && reel2 === "😈" && reel3 === "😈") {
       prize = 1500;
-      message += `大当たり！ ${prize} ポイント獲得！`;
+      message += `大当たりじゃ！ ${prize} ポイント授ける！`;
     } else if (reel1 === reel2 && reel2 === reel3) {
       prize = 500;
-      message += `当たり！ ${prize} ポイント獲得！`;
+      message += `当たりじゃ！ ${prize} ポイント授ける！`;
     } else {
-      message += "残念、ハズレです。";
+      message += "残念、ハズレじゃ。";
     }
 
     let finalPoints = currentPoints;
@@ -396,7 +414,7 @@ export default async function handler(req, res) {
       finalPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
     }
 
-    message += ` (現在: ${finalPoints}ポイント)`;
+    message += ` (今: ${finalPoints}p)`;
     await replyToLine(replyToken, message);
     return res.status(200).end();
   }
@@ -404,7 +422,84 @@ export default async function handler(req, res) {
   if (userText === "!omikuji") {
     const fortunes = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"];
     const randomFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
-    await replyToLine(replyToken, `おみくじの結果は「${randomFortune}」です。`);
+    await replyToLine(replyToken, `神託を授ける...汝の運命は「${randomFortune}」じゃ。`);
+    return res.status(200).end();
+  }
+
+  if (userText === "!reset") {
+    const resetConfirmKey = `${PREFIX_RESET_CONFIRM}${userId}`;
+    await kv.set(resetConfirmKey, true, { ex: 60 }); // 60秒間確認状態を保持
+    await replyToLine(replyToken, "全てを無に帰すか？\n然らば「はい」と申せ。");
+    return res.status(200).end();
+  }
+
+  if (userText.startsWith("!help")) {
+    const parts = userText.split(" ");
+    const category = parts[1];
+
+    if (!category) {
+      const helpText = "我が力を知りたいか？\n項目を選ぶのじゃ。";
+      const quickReply = {
+        items: [
+          {
+            type: "action",
+            action: {
+              type: "message",
+              label: "ポイント関連",
+              text: "!help ポイント"
+            }
+          },
+          {
+            type: "action",
+            action: {
+              type: "message",
+              label: "ゲーム関連",
+              text: "!help ゲーム"
+            }
+          },
+          {
+              type: "action",
+              action: {
+                type: "message",
+                label: "その他",
+                text: "!help その他"
+              }
+          }
+        ]
+      };
+      await replyToLine(replyToken, helpText, quickReply);
+    } else {
+      let helpMessage = "";
+      switch (category) {
+        case "ポイント":
+          helpMessage = "--- ポイント関連の我が力 ---\n" +
+                        "!point : 汝のポイントを見る\n" +
+                        "!work : 労働の対価(50p)を得る\n" +
+                        "!leaderboard : 信徒の階梯を見る\n" +
+                        "!borrow <金額> : pを借りる(1割の利子)\n" +
+                        "!repay <金額> : 借金を返す\n" +
+                        "!reset : 全てを無に帰す";
+          break;
+        case "ゲーム":
+          helpMessage = "--- 遊戯関連の我が力 ---\n" +
+                        "!slot : スロット(1回10p)\n" +
+                        "!diceroll <1-6> <賭け金> : サイコロ博打\n" +
+                        "!omikuji : 神託を授かる\n" +
+                        "!eng, !engeasy, !enghard : 英単語の試練";
+          break;
+        case "その他":
+          helpMessage = "--- その他の我が力 ---\n" +
+                        "!tradebuy <数量> : 株を買う\n" +
+                        "!tradesell <数量> : 株を売る\n" +
+                        "!tradesee : 株価と持ち株を見る\n" +
+                        "!ai <文> : 我と話す";
+          break;
+        default:
+          helpMessage = `「${category}」...？\nそのような項目はないぞ。`;
+          break;
+      }
+      await replyToLine(replyToken, helpMessage);
+    }
     return res.status(200).end();
   }
 
@@ -423,9 +518,9 @@ export default async function handler(req, res) {
       }
       console.log("[LEADERBOARD] Parsed sortedUsers:", JSON.stringify(sortedUsers));
 
-      let leaderboardMessage = "ポイントランキング\n";
+      let leaderboardMessage = "信徒たちの階梯\n";
       if (sortedUsers.length === 0) {
-        leaderboardMessage += "まだランキングに誰もいません。\n";
+        leaderboardMessage += "まだ天の階には誰もおらぬ。\n";
       } else {
         sortedUsers.forEach(([uid, points], index) => {
           const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...` : uid.toString();
@@ -441,7 +536,7 @@ export default async function handler(req, res) {
     } catch (error) {
       console.error("[LEADERBOARD] Error in !leaderboard handler:", error);
       // ユーザーIDが含まれていると、エラーメッセージからユーザーが特定できてしまう可能性があるため、汎用的なメッセージにする
-      await replyToLine(replyToken, "リーダーボードの表示中にエラーが発生しました。しばらくしてから再度お試しください。");
+      await replyToLine(replyToken, "天の階梯に乱れが生じた。少し待つがよい。");
       return res.status(500).end();
     }
   }
@@ -465,7 +560,7 @@ export default async function handler(req, res) {
       currentStockPrice = await kv.get(KEY_CURRENT_STOCK_PRICE) || 100;
       const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
       const userStockCount = await kv.get(userStockKey) || 0;
-      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}p\n保有株数: ${userStockCount}株`);
+      await replyToLine(replyToken, `今の株価: ${currentStockPrice}p\n汝の持ち株: ${userStockCount}株`);
       return res.status(200).end();
     }
 
@@ -475,7 +570,7 @@ export default async function handler(req, res) {
         const amount = parseInt(parts[1], 10);
 
         if (isNaN(amount) || amount <= 0) {
-          await replyToLine(replyToken, "数量は正の整数で指定してください。例: !tradebuy 10");
+          await replyToLine(replyToken, "数は正しく入力するのじゃ。例: !tradebuy 10");
           return res.status(200).end();
         }
 
@@ -488,30 +583,30 @@ export default async function handler(req, res) {
         if (command === "!tradebuy") {
           const cost = currentStockPrice * amount;
           if (userCurrentPoints < cost) {
-            await replyToLine(replyToken, `ポイントが不足しています。(${amount}株: ${cost}p, 保有: ${userCurrentPoints}p)`);
+            await replyToLine(replyToken, `ポイントが足りぬぞ。(${amount}株: ${cost}p, 持: ${userCurrentPoints}p)`);
             return res.status(200).end();
           }
           userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
           userStockCount += amount;
           await kv.set(userStockKey, userStockCount);
-          await replyToLine(replyToken, `${amount}株を${cost}pで購入しました。\n保有株数: ${userStockCount}株\n残ポイント: ${userCurrentPoints}p`);
+          await replyToLine(replyToken, `${amount}株を${cost}pで買うた。\n持ち株: ${userStockCount}株\n残りp: ${userCurrentPoints}p`);
           return res.status(200).end();
         }
 
         if (command === "!tradesell") {
           if (userStockCount < amount) {
-            await replyToLine(replyToken, `株が不足しています。(${amount}株売却希望, 保有: ${userStockCount}株)`);
+            await replyToLine(replyToken, `株が足りぬぞ。(${amount}株希望, 持: ${userStockCount}株)`);
             return res.status(200).end();
           }
           const earnings = currentStockPrice * amount;
           userStockCount -= amount;
           await kv.set(userStockKey, userStockCount);
           userCurrentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
-          await replyToLine(replyToken, `${amount}株を${earnings}pで売却しました。\n保有株数: ${userStockCount}株\n残ポイント: ${userCurrentPoints}p`);
+          await replyToLine(replyToken, `${amount}株を${earnings}pで売った。\n持ち株: ${userStockCount}株\n残りp: ${userCurrentPoints}p`);
           return res.status(200).end();
         }
       } else {
-        await replyToLine(replyToken, "数量を指定してください。例: !tradebuy 10");
+        await replyToLine(replyToken, "数を指定せよ。例: !tradebuy 10");
         return res.status(200).end();
       }
     }
@@ -523,7 +618,7 @@ export default async function handler(req, res) {
   if (userText.startsWith("!diceroll ")) {
     const parts = userText.split(" ");
     if (parts.length !== 3) {
-      await replyToLine(replyToken, "コマンドの形式が正しくありません。\n例: !diceroll <1〜6の数字> <賭け金>");
+      await replyToLine(replyToken, "コマンドが違うぞ。\n例: !diceroll <1〜6> <賭け金>");
       return res.status(200).end();
     }
 
@@ -531,31 +626,31 @@ export default async function handler(req, res) {
     const betAmount = parseInt(parts[2], 10);
 
     if (isNaN(betNumber) || betNumber < 1 || betNumber > 6) {
-      await replyToLine(replyToken, "1から6の数字を選んでください。");
+      await replyToLine(replyToken, "1から6の数字を選ぶのじゃ。");
       return res.status(200).end();
     }
     if (isNaN(betAmount) || betAmount <= 0) {
-      await replyToLine(replyToken, "賭け金は正の整数で指定してください。");
+      await replyToLine(replyToken, "賭け金は正しく指定せよ。");
       return res.status(200).end();
     }
 
     let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
     if (currentPoints < betAmount) {
-      await replyToLine(replyToken, `ポイントが不足しています。(賭け金: ${betAmount}p, 保有: ${currentPoints}p)`);
+      await replyToLine(replyToken, `ポイントが足りぬ。(賭け金: ${betAmount}p, 持: ${currentPoints}p)`);
       return res.status(200).end();
     }
 
     currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -betAmount, userId);
 
     const diceRoll = Math.floor(Math.random() * 6) + 1;
-    let message = `サイコロの目: 「${diceRoll}」！\n`;
+    let message = `サイコロの目: 「${diceRoll}」じゃ！\n`;
 
     if (betNumber === diceRoll) {
       const prize = betAmount * 6;
       const finalPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      message += `的中！ ${prize}ポイント獲得！ (現在: ${finalPoints}p)`;
+      message += `的中じゃ！ ${prize}p授ける！ (今: ${finalPoints}p)`;
     } else {
-      message += `ハズレ。 (現在: ${currentPoints}p)`;
+      message += `ハズレじゃ。 (今: ${currentPoints}p)`;
     }
 
     await replyToLine(replyToken, message);
@@ -566,13 +661,19 @@ export default async function handler(req, res) {
   if (userText.startsWith("!borrow")) {
     const parts = userText.split(" ");
     if (parts.length < 2) {
-      await replyToLine(replyToken, "金額を指定してください。例: !borrow 100");
+      await replyToLine(replyToken, "金額を申せ。例: !borrow 100");
       return res.status(200).end();
     }
     const amount = parseInt(parts[1], 10);
     if (isNaN(amount) || amount <= 0) {
-      await replyToLine(replyToken, "借り入れは正の整数で指定してください。");
+      await replyToLine(replyToken, "正の整数で申せ。");
       return res.status(200).end();
+    }
+
+    const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+    if (amount > currentPoints) {
+        await replyToLine(replyToken, `汝のp(${currentPoints}p)以上は貸せぬ。`);
+        return res.status(200).end();
     }
 
     const debtKey = `${PREFIX_USER_DEBT}${userId}`;
@@ -582,19 +683,19 @@ export default async function handler(req, res) {
     const currentDebt = await kv.incrby(debtKey, totalDebt);
     const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, amount, userId);
 
-    await replyToLine(replyToken, `${amount}pを借りました(利子込${totalDebt}p)。\n現在の借金: ${currentDebt}p\n現在のポイント: ${newPoints}p`);
+    await replyToLine(replyToken, `${amount}p貸した(利子込${totalDebt}p)。\n今の借金: ${currentDebt}p\n今のp: ${newPoints}p`);
     return res.status(200).end();
   }
 
   if (userText.startsWith("!repay")) {
     const parts = userText.split(" ");
     if (parts.length < 2) {
-      await replyToLine(replyToken, "金額を指定してください。例: !repay 100");
+      await replyToLine(replyToken, "金額を申せ。例: !repay 100");
       return res.status(200).end();
     }
     const amount = parseInt(parts[1], 10);
     if (isNaN(amount) || amount <= 0) {
-      await replyToLine(replyToken, "返済は正の整数で指定してください。");
+      await replyToLine(replyToken, "正の整数で申せ。");
       return res.status(200).end();
     }
 
@@ -602,13 +703,13 @@ export default async function handler(req, res) {
     const currentDebt = await kv.get(debtKey) || 0;
 
     if (currentDebt === 0) {
-      await replyToLine(replyToken, "借金はありません。");
+      await replyToLine(replyToken, "汝に借金はないぞ。");
       return res.status(200).end();
     }
 
     const currentUserPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
     if (currentUserPoints < amount) {
-      await replyToLine(replyToken, `ポイントが不足しています。(返済額: ${amount}p, 保有: ${currentUserPoints}p)`);
+      await replyToLine(replyToken, `ポイントが足りぬ。(返済: ${amount}p, 持: ${currentUserPoints}p)`);
       return res.status(200).end();
     }
 
@@ -618,9 +719,9 @@ export default async function handler(req, res) {
 
     if (remainingDebt <= 0) {
       await kv.del(debtKey);
-      await replyToLine(replyToken, `${amount}p返済し、借金がなくなりました。\n現在のポイント: ${newPoints}p`);
+      await replyToLine(replyToken, `${amount}p返済し、借金は消えた。\n今のp: ${newPoints}p`);
     } else {
-      await replyToLine(replyToken, `${amount}p返済しました。\n残りの借金: ${remainingDebt}p\n現在のポイント: ${newPoints}p`);
+      await replyToLine(replyToken, `${amount}p返済した。\n残りの借金: ${remainingDebt}p\n今のp: ${newPoints}p`);
     }
     return res.status(200).end();
   }
@@ -630,7 +731,7 @@ export default async function handler(req, res) {
       const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
       const existingGame = await kv.get(gameKey);
       if (existingGame) {
-          await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
+          await replyToLine(replyToken, `前の問いに答えよ。「${existingGame.japanese}」の英訳は？`);
           return res.status(200).end();
       }
 
@@ -655,7 +756,7 @@ export default async function handler(req, res) {
       const word = wordList[Math.floor(Math.random() * wordList.length)];
       await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize }, { ex: 300 });
 
-      await replyToLine(replyToken, `この日本語を英訳せよ：\n\n「${word.japanese}」`);
+      await replyToLine(replyToken, `試練を与えよう。英訳せよ：\n\n「${word.japanese}」`);
       return res.status(200).end();
   }
 
@@ -718,7 +819,16 @@ export default async function handler(req, res) {
 }
 
 // LINEへの返信を行う共通関数
-async function replyToLine(replyToken, text) {
+async function replyToLine(replyToken, text, quickReply = null) {
+  const message = {
+    type: "text",
+    text: text,
+  };
+
+  if (quickReply) {
+    message.quickReply = quickReply;
+  }
+
   try {
     const lineResponse = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
@@ -728,7 +838,7 @@ async function replyToLine(replyToken, text) {
       },
       body: JSON.stringify({
         replyToken,
-        messages: [{ type: "text", text }]
+        messages: [message]
       })
     });
 
