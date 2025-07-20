@@ -694,6 +694,12 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
+    const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+    if (amount > currentPoints) {
+      await replyToLine(replyToken, `借り入れは現在のポイント(${currentPoints}p)までです。`);
+      return res.status(200).end();
+    }
+
     const debtKey = `${PREFIX_USER_DEBT}${userId}`;
     const interest = Math.ceil(amount * 0.1);
     const totalDebt = amount + interest;
