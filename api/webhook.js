@@ -654,6 +654,92 @@ export default async function handler(req, res) {
       await replyToLine(replyToken, `この日本語を英訳せよ：\n\n「${word.japanese}」`);
       return res.status(200).end();
   }
+  // --- ガチャ機能 ---
+  const gachaTiers = {
+    low: {
+      cost: 100,
+      items: [
+        { rarity: "N", name: "砂漠の石", weight: 70 },
+        { rarity: "R", name: "オアシスの水", weight: 25 },
+        { rarity: "SR", name: "マナの欠片", weight: 5 },
+      ]
+    },
+    mid: {
+      cost: 500,
+      items: [
+        { rarity: "R", name: "聖なるハーブ", weight: 60 },
+        { rarity: "SR", name: "天使の羽根", weight: 35 },
+        { rarity: "SSR", name: "聖杯", weight: 5 },
+      ]
+    },
+    high: {
+      cost: 5000,
+      items: [
+        { rarity: "SR", name: "賢者の石", weight: 70 },
+        { rarity: "SSR", name: "契約の箱", weight: 25 },
+        { rarity: "UR", name: "生命の樹の枝", weight: 5 },
+      ]
+    }
+  };
+
+  if (userText.startsWith("!gacha")) {
+    const parts = userText.split(" ");
+    const tierName = parts[1]; // low, mid, high
+    const count = parts.length > 2 ? parseInt(parts[2], 10) : 1;
+
+    if (!gachaTiers[tierName] || isNaN(count) || count <= 0 || count > 10) {
+      await replyToLine(replyToken, "啓示：gacha (low/mid/high) (回数)");
+      return res.status(200).end();
+    }
+
+    const tier = gachaTiers[tierName];
+    const totalCost = tier.cost * count;
+    let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+
+    if (currentPoints < totalCost) {
+      await replyToLine(replyToken, `啓示：信仰が足りぬ... (必要: ${totalCost}p, 現在: ${currentPoints}p)`);
+      return res.status(200).end();
+    }
+
+    currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -totalCost, userId);
+
+    const results = [];
+    const userItemsKey = `items:${userId}`;
+    const totalWeight = tier.items.reduce((sum, item) => sum + item.weight, 0);
+
+    for (let i = 0; i < count; i++) {
+        let random = Math.random() * totalWeight;
+        for (const item of tier.items) {
+            random -= item.weight;
+            if (random < 0) {
+                results.push(item);
+                await kv.sadd(userItemsKey, `[${item.rarity}] ${item.name}`);
+                break;
+            }
+        }
+    }
+
+    const resultMessage = results.map(item => `[${item.rarity}] ${item.name}`).join("\n");
+    const finalMessage = `---啓示---\n${resultMessage}\n----------\n残りの信仰: ${currentPoints}p`;
+    await replyToLine(replyToken, finalMessage);
+    return res.status(200).end();
+  }
+
+
+  if (userText === "!items") {
+      const userItemsKey = `items:${userId}`;
+      const items = await kv.smembers(userItemsKey);
+
+      if (!items || items.length === 0) {
+          await replyToLine(replyToken, "汝、まだ何も持たざる者なり。");
+          return res.status(200).end();
+      }
+
+      const message = "---啓示：汝の持ち物---\n- " + items.sort().join("\n- ");
+      await replyToLine(replyToken, message);
+      return res.status(200).end();
+  }
+  // -----------------
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
 
