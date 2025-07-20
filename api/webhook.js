@@ -327,17 +327,42 @@ export default async function handler(req, res) {
       ? gameData.english.includes(answer)
       : answer === gameData.english;
 
+    let replyMessage;
     if (isCorrect) {
       const prize = gameData.prize;
       const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      await replyToLine(replyToken, `正解！ ${prize}ポイント獲得！ (現在: ${newPoints}ポイント)`);
+      replyMessage = `正解！ ${prize}ポイント獲得！ (現在: ${newPoints}ポイント)`;
     } else {
       // 不正解の場合、正解の単語（配列の場合は最初の単語）を提示
       const correctAnswer = Array.isArray(gameData.english) ? gameData.english[0] : gameData.english;
-      await replyToLine(replyToken, `不正解。正解は「${correctAnswer}」でした。`);
+      replyMessage = `不正解。正解は「${correctAnswer}」でした。`;
     }
 
     await kv.del(gameKey);
+
+    // Quick Replyを定義
+    const quickReply = {
+      items: [
+        {
+          type: "action",
+          action: {
+            type: "message",
+            label: "もう一度挑戦する",
+            text: `!eng${gameData.difficulty}` // e.g., !engeasy
+          }
+        },
+        {
+          type: "action",
+          action: {
+            type: "message",
+            label: "難易度を変える",
+            text: "!eng"
+          }
+        }
+      ]
+    };
+
+    await replyToLine(replyToken, replyMessage, quickReply);
     return res.status(200).end();
   }
 
@@ -358,7 +383,18 @@ export default async function handler(req, res) {
 
   if (userText === "!work") {
     const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
-    await replyToLine(replyToken, `50ポイント獲得しました。 (現在: ${newPoints} ポイント)`);
+    await replyToLine(replyToken, `50ポイント獲得しました。 (現在: ${newPoints} ポイント)`, {
+      items: [
+        {
+          type: "action",
+          action: {
+            type: "message",
+            label: "もう一回働く",
+            text: "!work"
+          }
+        }
+      ]
+    });
     return res.status(200).end();
   }
 
@@ -397,14 +433,36 @@ export default async function handler(req, res) {
     }
 
     message += ` (現在: ${finalPoints}ポイント)`;
-    await replyToLine(replyToken, message);
+    await replyToLine(replyToken, message, {
+      items: [
+        {
+          type: "action",
+          action: {
+            type: "message",
+            label: "もう一回引く",
+            text: "!slot"
+          }
+        }
+      ]
+    });
     return res.status(200).end();
   }
 
   if (userText === "!omikuji") {
     const fortunes = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"];
     const randomFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
-    await replyToLine(replyToken, `おみくじの結果は「${randomFortune}」です。`);
+    await replyToLine(replyToken, `おみくじの結果は「${randomFortune}」です。`, {
+      items: [
+        {
+          type: "action",
+          action: {
+            type: "message",
+            label: "もう一回引く",
+            text: "!omikuji"
+          }
+        }
+      ]
+    });
     return res.status(200).end();
   }
 
@@ -630,26 +688,32 @@ export default async function handler(req, res) {
           return res.status(200).end();
       }
 
-      let wordList;
-      let prize;
-      let command = userText;
+      let wordList, prize, difficulty;
+      const command = userText;
 
       if (command === "!engeasy") {
-          wordList = easyWords;
-          prize = 10;
-      } else if (command === "!eng") {
-          wordList = normalWords;
-          prize = 30;
+          wordList = easyWords; prize = 10; difficulty = "easy";
+      } else if (command === "!engnormal") {
+          wordList = normalWords; prize = 30; difficulty = "normal";
       } else if (command === "!enghard") {
-          wordList = hardWords;
-          prize = 50;
+          wordList = hardWords; prize = 50; difficulty = "hard";
+      } else if (command === "!eng") {
+          // 難易度選択のQuick Replyを表示
+          await replyToLine(replyToken, "難易度を選んでください。", {
+              items: [
+                  { type: "action", action: { type: "message", label: "簡単", text: "!engeasy" } },
+                  { type: "action", action: { type: "message", label: "普通", text: "!engnormal" } },
+                  { type: "action", action: { type: "message", label: "難しい", text: "!enghard" } }
+              ]
+          });
+          return res.status(200).end();
       } else {
           // !eng... だけど上記に一致しない場合は何もしない
           return res.status(200).end();
       }
 
       const word = wordList[Math.floor(Math.random() * wordList.length)];
-      await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize }, { ex: 300 });
+      await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
 
       await replyToLine(replyToken, `この日本語を英訳せよ：\n\n「${word.japanese}」`);
       return res.status(200).end();
@@ -714,8 +778,17 @@ export default async function handler(req, res) {
 }
 
 // LINEへの返信を行う共通関数
-async function replyToLine(replyToken, text) {
+async function replyToLine(replyToken, text, quickReply = null) {
   try {
+    const messages = [{
+      type: "text",
+      text: text
+    }];
+
+    if (quickReply) {
+      messages[0].quickReply = quickReply;
+    }
+
     const lineResponse = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
       headers: {
@@ -724,7 +797,7 @@ async function replyToLine(replyToken, text) {
       },
       body: JSON.stringify({
         replyToken,
-        messages: [{ type: "text", text }]
+        messages: messages
       })
     });
 
