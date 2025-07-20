@@ -348,15 +348,15 @@ export default async function handler(req, res) {
           action: {
             type: "message",
             label: "もう一度挑戦する",
-            text: `!eng${gameData.difficulty}` // e.g., !engeasy
+            text: `!eng${gameData.difficulty === 'normal' ? '' : gameData.difficulty}`
           }
         },
         {
           type: "action",
           action: {
             type: "message",
-            label: "難易度を変える",
-            text: "!eng"
+            label: "難易度選択",
+            text: "!eng_select_difficulty" // 新しいコマンドで難易度選択をトリガー
           }
         }
       ]
@@ -448,16 +448,81 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (userText === "!gacha") {
+    const cost = 100;
+    let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+
+    if (currentPoints < cost) {
+      await replyToLine(replyToken, `ガチャには${cost}ポイント必要です。 (現在: ${currentPoints}ポイント)`);
+      return res.status(200).end();
+    }
+
+    currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+
+    const gachaItems = [
+        { name: "伝説の剣", rarity: "UR", weight: 1 },
+        { name: "英雄の盾", rarity: "SSR", weight: 4 },
+        { name: "賢者の石", rarity: "SSR", weight: 5 },
+        { name: "ポーション", rarity: "R", weight: 30 },
+        { name: "ただの石ころ", rarity: "N", weight: 60 }
+    ];
+
+    const totalWeight = gachaItems.reduce((sum, item) => sum + item.weight, 0);
+    let random = Math.random() * totalWeight;
+    let selectedItem;
+
+    for (const item of gachaItems) {
+        random -= item.weight;
+        if (random < 0) {
+            selectedItem = item;
+            break;
+        }
+    }
+
+    // ポイントバックの可能性
+    let prize = 0;
+    if (selectedItem.rarity === "UR") prize = 10000;
+    if (selectedItem.rarity === "SSR") prize = 1000;
+    if (selectedItem.rarity === "R") prize = 50;
+
+    let message = `ガチャを引いた！\n\n【${selectedItem.rarity}】 ${selectedItem.name} を手に入れた！`;
+    if (prize > 0) {
+        currentPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+        message += `\nさらに ${prize} ポイント獲得！`;
+    }
+
+    message += ` (現在: ${currentPoints}ポイント)`;
+
+    await replyToLine(replyToken, message, {
+        items: [{
+            type: "action",
+            action: { type: "message", label: "もう一回引く", text: "!gacha" }
+        }]
+    });
+    return res.status(200).end();
+  }
+
   if (userText === "!omikuji") {
-    const fortunes = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"];
-    const randomFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
-    await replyToLine(replyToken, `おみくじの結果は「${randomFortune}」です。`, {
+    const fortunes = {
+        "大吉": "天の啓示が下った。汝の道は光に満ち溢れておる。進むがよい、我が子よ。",
+        "中吉": "悪くない運命の流れだ。小さな喜びが、やがて大河となるであろう。",
+        "小吉": "足元をよく見よ。ささやかな幸運が、汝のすぐそばに隠されておる。",
+        "吉": "平穏な日々が続くだろう。神の恵みに感謝し、徳を積むのだ。",
+        "末吉": "今は雌伏の時。だが、希望の種は汝の心に蒔かれた。いずれ芽吹くであろう。",
+        "凶": "試練の時が来たようだ。だが、この苦難を乗り越えた時、汝はより強く、賢くなるであろう。",
+        "大凶": "暗雲が立ち込めておる…。だが、夜が最も深い時こそ、夜明けは近い。祈りを捧げ、時を待つのだ。"
+    };
+    const fortuneKeys = Object.keys(fortunes);
+    const randomFortuneKey = fortuneKeys[Math.floor(Math.random() * fortuneKeys.length)];
+    const message = `神託を授けよう…\n\n【${randomFortuneKey}】\n${fortunes[randomFortuneKey]}`;
+
+    await replyToLine(replyToken, message, {
       items: [
         {
           type: "action",
           action: {
             type: "message",
-            label: "もう一回引く",
+            label: "もう一度神託を",
             text: "!omikuji"
           }
         }
@@ -693,20 +758,10 @@ export default async function handler(req, res) {
 
       if (command === "!engeasy") {
           wordList = easyWords; prize = 10; difficulty = "easy";
-      } else if (command === "!engnormal") {
+      } else if (command === "!eng") { // !eng は normal 扱い
           wordList = normalWords; prize = 30; difficulty = "normal";
       } else if (command === "!enghard") {
           wordList = hardWords; prize = 50; difficulty = "hard";
-      } else if (command === "!eng") {
-          // 難易度選択のQuick Replyを表示
-          await replyToLine(replyToken, "難易度を選んでください。", {
-              items: [
-                  { type: "action", action: { type: "message", label: "簡単", text: "!engeasy" } },
-                  { type: "action", action: { type: "message", label: "普通", text: "!engnormal" } },
-                  { type: "action", action: { type: "message", label: "難しい", text: "!enghard" } }
-              ]
-          });
-          return res.status(200).end();
       } else {
           // !eng... だけど上記に一致しない場合は何もしない
           return res.status(200).end();
@@ -717,6 +772,18 @@ export default async function handler(req, res) {
 
       await replyToLine(replyToken, `この日本語を英訳せよ：\n\n「${word.japanese}」`);
       return res.status(200).end();
+  }
+
+  if (userText === "!eng_select_difficulty") {
+    // 難易度選択のQuick Replyを表示
+    await replyToLine(replyToken, "難易度を選んでください。", {
+        items: [
+            { type: "action", action: { type: "message", label: "簡単", text: "!engeasy" } },
+            { type: "action", action: { type: "message", label: "普通", text: "!eng" } },
+            { type: "action", action: { type: "message", label: "難しい", text: "!enghard" } }
+        ]
+    });
+    return res.status(200).end();
   }
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
