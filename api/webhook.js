@@ -381,6 +381,29 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (userText === "!help") {
+    const helpMessage = `【コマンド一覧】
+!help: このメッセージを表示
+!point: 現在のポイントを表示
+!work: 50ポイント獲得
+!slot: スロットを回す (10p)
+!gacha <low/mid/high> [回数]: ガチャを引く
+!items: アイテム一覧
+!omikuji: おみくじを引く
+!leaderboard: ランキング表示
+!tradesee: 株価と保有株数を表示
+!tradebuy <数量>: 株の購入
+!tradesell <数量>: 株の売却
+!diceroll <1-6> <賭け金>: サイコロゲーム
+!borrow <金額>: 借金 (利子10%)
+!repay <金額>: 返済
+!eng_select_difficulty: 英単語クイズの難易度選択
+!engeasy / !eng / !enghard: 英単語クイズ開始
+!ai <メッセージ>: AIと会話`;
+    await replyToLine(replyToken, helpMessage);
+    return res.status(200).end();
+  }
+
   if (userText === "!work") {
     const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
     await replyToLine(replyToken, `50ポイント獲得しました。 (現在: ${newPoints} ポイント)`, {
