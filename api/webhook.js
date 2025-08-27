@@ -565,6 +565,126 @@ export default async function handler(req, res) {
     }
   }
 
+  // --- 経済パネルコマンド ---
+  if (userText === "!economy") {
+    await replyToLine(replyToken, "御用は何かな？", {
+      items: [
+        { type: "action", action: { type: "message", label: "稼ぐ", text: "!economy_earn" } },
+        { type: "action", action: { type: "message", label: "遊ぶ", text: "!economy_play" } },
+        { type: "action", action: { type: "message", label: "投資", text: "!economy_invest" } },
+        { type: "action", action: { type: "message", label: "資産", text: "!economy_assets" } },
+        { type: "action", action: { type: "message", label: "借金", text: "!economy_debt" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+  // 第2階層：稼ぐ
+  if (userText === "!economy_earn") {
+    await replyToLine(replyToken, "労働は尊いぞ。", {
+      items: [
+        { type: "action", action: { type: "message", label: "働く", text: "!work" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!economy" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+  // 第2階層：遊ぶ
+  if (userText === "!economy_play") {
+    await replyToLine(replyToken, "運命を試すがよい。", {
+      items: [
+        { type: "action", action: { type: "message", label: "スロット", text: "!slot" } },
+        { type: "action", action: { type: "message", label: "ガチャ", text: "!economy_gacha" } },
+        { type: "action", action: { type: "message", label: "おみくじ", text: "!omikuji" } },
+        { type: "action", action: { type: "message", label: "サイコロ", text: "!economy_dice_info" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!economy" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+  // 第3階層：ガチャ
+  if (userText === "!economy_gacha") {
+    await replyToLine(replyToken, "どの祭壇に祈りを捧げる？", {
+        items: [
+            { type: "action", action: { type: "message", label: "低級ガチャ(100p)", text: "!gacha low" } },
+            { type: "action", action: { type: "message", label: "中級ガチャ(500p)", text: "!gacha mid" } },
+            { type: "action", action: { type: "message", label: "高級ガチャ(5000p)", text: "!gacha high" } },
+            { type: "action", action: { type: "message", label: "戻る", text: "!economy_play" } },
+        ]
+    });
+    return res.status(200).end();
+  }
+  // ガイド：サイコロ
+  if (userText === "!economy_dice_info") {
+    await replyToLine(replyToken, "「!diceroll <1〜6の数字> <賭け金>」で勝負！", {
+      items: [ { type: "action", action: { type: "message", label: "戻る", text: "!economy_play" } } ]
+    });
+    return res.status(200).end();
+  }
+  // 第2階層：投資
+  if (userText === "!economy_invest") {
+    await replyToLine(replyToken, "富は勇者のもとに集う。", {
+      items: [
+        { type: "action", action: { type: "message", label: "株価を見る", text: "!tradesee" } },
+        { type: "action", action: { type: "message", label: "株を買う", text: "!economy_buy_info" } },
+        { type: "action", action: { type: "message", label: "株を売る", text: "!economy_sell_info" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!economy" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+  // ガイド：株を買う
+  if (userText === "!economy_buy_info") {
+    await replyToLine(replyToken, "「!tradebuy <数量>」で購入できるぞ。", {
+      items: [ { type: "action", action: { type: "message", label: "戻る", text: "!economy_invest" } } ]
+    });
+    return res.status(200).end();
+  }
+  // ガイド：株を売る
+  if (userText === "!economy_sell_info") {
+    await replyToLine(replyToken, "「!tradesell <数量>」で売却なされよ。", {
+      items: [ { type: "action", action: { type: "message", label: "戻る", text: "!economy_invest" } } ]
+    });
+    return res.status(200).end();
+  }
+  // 第2階層：資産
+  if (userText === "!economy_assets") {
+    await replyToLine(replyToken, "汝の富を確認せよ。", {
+      items: [
+        { type: "action", action: { type: "message", label: "ポイント確認", text: "!point" } },
+        { type: "action", action: { type: "message", label: "持ち物確認", text: "!items" } },
+        { type: "action", action: { type: "message", label: "ランキング", text: "!leaderboard" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!economy" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+  // 第2階層：借金
+  if (userText === "!economy_debt") {
+    await replyToLine(replyToken, "神は、時に試練を与える...", {
+      items: [
+        { type: "action", action: { type: "message", label: "借りる", text: "!economy_borrow_info" } },
+        { type: "action", action: { type: "message", label: "返す", text: "!economy_repay_info" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!economy" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+  // ガイド：借りる
+  if (userText === "!economy_borrow_info") {
+    await replyToLine(replyToken, "「!borrow <金額>」で借りるがよい。利子を忘れるな。", {
+      items: [ { type: "action", action: { type: "message", label: "戻る", text: "!economy_debt" } } ]
+    });
+    return res.status(200).end();
+  }
+  // ガイド：返す
+  if (userText === "!economy_repay_info") {
+    await replyToLine(replyToken, "「!repay <金額>」で返済せよ。信義は大事だ。", {
+      items: [ { type: "action", action: { type: "message", label: "戻る", text: "!economy_debt" } } ]
+    });
+    return res.status(200).end();
+  }
+  // -------------------------
+
   // 株価を少し変動させる非同期関数
   async function fluctuateStockPrice() {
     let stockPrice = await kv.get(KEY_CURRENT_STOCK_PRICE) || 100;
