@@ -316,6 +316,31 @@ export default async function handler(req, res) {
   const replyToken = event.replyToken;
   const userId = event.source.userId; // ユーザーIDを取得
 
+  // --- 英単語ゲームヘルパー関数 ---
+  async function startEnglishGame(difficulty) {
+    const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
+    const existingGame = await kv.get(gameKey);
+    if (existingGame) {
+        await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
+        return;
+    }
+
+    let wordList, prize;
+    if (difficulty === 'easy') {
+        wordList = easyWords; prize = 10;
+    } else if (difficulty === 'normal') {
+        wordList = normalWords; prize = 30;
+    } else { // hard
+        wordList = hardWords; prize = 50;
+    }
+
+    const word = wordList[Math.floor(Math.random() * wordList.length)];
+    await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
+
+    await replyToLine(replyToken, `[${difficulty}] この日本語を英訳せよ：\n\n「${word.japanese}」`);
+  }
+  // --------------------------------
+
   // --- 英単語ゲームの回答処理 ---
   const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
   const gameData = await kv.get(gameKey);
@@ -406,9 +431,9 @@ export default async function handler(req, res) {
 !diceroll <1-6> <賭け金>: サイコロゲーム
 !borrow <金額>: 借金 (利子10%)
 !repay <金額>: 返済
-!eng: 現在の難易度で英単語クイズを開始
-!englow: 英単語クイズの難易度を一段階下げる
-!enghigh: 英単語クイズの難易度を一段階上げる
+!eng: 現在の難易度で新しい問題に挑戦
+!englow: 難易度を下げて新しい問題に挑戦
+!enghigh: 難易度を上げて新しい問題に挑戦
 !ai <メッセージ>: AIと会話`;
     await replyToLine(replyToken, helpMessage);
     return res.status(200).end();
@@ -799,36 +824,17 @@ export default async function handler(req, res) {
       }
     }
     await kv.set(difficultyKey, newDifficulty);
-    await replyToLine(replyToken, `英単語クイズの難易度を '${newDifficulty}' に変更しました。`);
+    await startEnglishGame(newDifficulty); // 新しい問題を開始
     return res.status(200).end();
   }
 
   if (userText === "!eng") {
-      const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
-      const existingGame = await kv.get(gameKey);
-      if (existingGame) {
-          await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
-          return res.status(200).end();
-      }
-
       const difficultyKey = `${PREFIX_ENGLISH_DIFFICULTY}${userId}`;
       const difficulty = await kv.get(difficultyKey) || 'normal';
-
-      let wordList, prize;
-      if (difficulty === 'easy') {
-          wordList = easyWords; prize = 10;
-      } else if (difficulty === 'normal') {
-          wordList = normalWords; prize = 30;
-      } else { // hard
-          wordList = hardWords; prize = 50;
-      }
-
-      const word = wordList[Math.floor(Math.random() * wordList.length)];
-      await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
-
-      await replyToLine(replyToken, `[${difficulty}] この日本語を英訳せよ：\n\n「${word.japanese}」`);
+      await startEnglishGame(difficulty);
       return res.status(200).end();
   }
+
   // --- ガチャ機能 ---
   const gachaTiers = {
     low: {
