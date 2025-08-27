@@ -120,6 +120,25 @@ const normalWords = [
 ];
 
 const hardWords = [
+    { english: ["articulate"], japanese: "はっきりと述べる" }, { english: ["summarise", "summarize"], japanese: "要約する" },
+    { english: ["jargon"], japanese: "専門用語" }, { english: ["plead"], japanese: "懇願する" },
+    { english: ["condemn"], japanese: "非難する" }, { english: ["inquiry"], japanese: "調査" },
+    { english: ["infrastructure"], japanese: "社会基盤" }, { english: ["mansion"], japanese: "大邸宅" },
+    { english: ["warehouse"], japanese: "倉庫" }, { english: ["landmark"], japanese: "目印" },
+    { english: ["reconstruction"], japanese: "再建" }, { english: ["premises"], japanese: "構内" },
+    { english: ["eccentric"], japanese: "風変わりな" }, { english: ["resourceful"], japanese: "機知に富んだ" },
+    { english: ["cynical"], japanese: "皮肉な" }, { english: ["trustworthy"], japanese: "信頼できる" },
+    { english: ["elated"], japanese: "大喜びして" }, { english: ["versatile"], japanese: "多才な" },
+    { english: ["ruthless"], japanese: "無慈悲な" }, { english: ["shabby"], japanese: "みすぼらしい" },
+    { english: ["luxurious"], japanese: "豪華な" }, { english: ["defective"], japanese: "欠陥のある" },
+    { english: ["monotonous"], japanese: "単調な" }, { english: ["bland"], japanese: "味気ない" },
+    { english: ["noticeable"], japanese: "目立つ" }, { english: ["staggering"], japanese: "驚異的な" },
+    { english: ["fragrant"], japanese: "香り高い" }, { english: "scarce", japanese: "乏しい" },
+    { english: ["sensational"], japanese: "衝撃的な" }, { english: ["wreck"], japanese: "破壊する" },
+    { english: ["grasp"], japanese: "理解する" },
+];
+
+const expertWords = [
     // 既存の単語
     { english: "abundant", japanese: "豊富な" }, { english: "controversial", japanese: "論争の的となる" },
     { english: "demonstrate", japanese: "実証する" }, { english: "exaggerate", japanese: "誇張する" },
@@ -330,8 +349,10 @@ export default async function handler(req, res) {
         wordList = easyWords; prize = 10;
     } else if (difficulty === 'normal') {
         wordList = normalWords; prize = 30;
-    } else { // hard
+    } else if (difficulty === 'hard') {
         wordList = hardWords; prize = 50;
+    } else { // expert
+        wordList = expertWords; prize = 80;
     }
 
     const word = wordList[Math.floor(Math.random() * wordList.length)];
@@ -431,9 +452,9 @@ export default async function handler(req, res) {
 !diceroll <1-6> <賭け金>: サイコロゲーム
 !borrow <金額>: 借金 (利子10%)
 !repay <金額>: 返済
-!eng: 現在の難易度で新しい問題に挑戦
-!englow: 難易度を下げて新しい問題に挑戦
-!enghigh: 難易度を上げて新しい問題に挑戦
+!eng: 現在の難易度で英単語クイズに挑戦
+!englow: 難易度を下げて挑戦 (easy/normal/hard/expert)
+!enghigh: 難易度を上げて挑戦 (easy/normal/hard/expert)
 !ai <メッセージ>: AIと会話`;
     await replyToLine(replyToken, helpMessage);
     return res.status(200).end();
@@ -809,17 +830,19 @@ export default async function handler(req, res) {
     let newDifficulty;
 
     if (userText === "!englow") {
-      if (currentDifficulty === 'hard') newDifficulty = 'normal';
+      if (currentDifficulty === 'expert') newDifficulty = 'hard';
+      else if (currentDifficulty === 'hard') newDifficulty = 'normal';
       else if (currentDifficulty === 'normal') newDifficulty = 'easy';
-      else {
+      else { // easy
         await replyToLine(replyToken, `現在の難易度は 'easy' で、すでに最低です。`);
         return res.status(200).end();
       }
     } else { // !enghigh
       if (currentDifficulty === 'easy') newDifficulty = 'normal';
       else if (currentDifficulty === 'normal') newDifficulty = 'hard';
-      else {
-        await replyToLine(replyToken, `現在の難易度は 'hard' で、すでに最高です。`);
+      else if (currentDifficulty === 'hard') newDifficulty = 'expert';
+      else { // expert
+        await replyToLine(replyToken, `現在の難易度は 'expert' で、すでに最高です。`);
         return res.status(200).end();
       }
     }
