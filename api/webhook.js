@@ -6,6 +6,7 @@ const KEY_CURRENT_STOCK_PRICE = 'current_stock_price';
 const PREFIX_USER_STOCKS = 'stocks:';
 const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレフィックス
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
+const PREFIX_ENGLISH_DIFFICULTY = 'english_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
 
 // 英単語リスト
 const easyWords = [
@@ -348,15 +349,23 @@ export default async function handler(req, res) {
           action: {
             type: "message",
             label: "もう一度挑戦する",
-            text: `!eng${gameData.difficulty === 'normal' ? '' : gameData.difficulty}`
+            text: "!eng"
           }
         },
         {
           type: "action",
           action: {
             type: "message",
-            label: "難易度選択",
-            text: "!eng_select_difficulty" // 新しいコマンドで難易度選択をトリガー
+            label: "難易度を上げる",
+            text: "!enghigh"
+          }
+        },
+        {
+          type: "action",
+          action: {
+            type: "message",
+            label: "難易度を下げる",
+            text: "!englow"
           }
         }
       ]
@@ -397,8 +406,9 @@ export default async function handler(req, res) {
 !diceroll <1-6> <賭け金>: サイコロゲーム
 !borrow <金額>: 借金 (利子10%)
 !repay <金額>: 返済
-!eng_select_difficulty: 英単語クイズの難易度選択
-!engeasy / !eng / !enghard: 英単語クイズ開始
+!eng: 現在の難易度で英単語クイズを開始
+!englow: 英単語クイズの難易度を一段階下げる
+!enghigh: 英単語クイズの難易度を一段階上げる
 !ai <メッセージ>: AIと会話`;
     await replyToLine(replyToken, helpMessage);
     return res.status(200).end();
@@ -767,8 +777,33 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 英単語ゲームの開始コマンド
-  if (userText.startsWith("!eng")) {
+  // 英単語ゲームの難易度変更・開始コマンド
+  if (userText === "!englow" || userText === "!enghigh") {
+    const difficultyKey = `${PREFIX_ENGLISH_DIFFICULTY}${userId}`;
+    const currentDifficulty = await kv.get(difficultyKey) || 'normal';
+    let newDifficulty;
+
+    if (userText === "!englow") {
+      if (currentDifficulty === 'hard') newDifficulty = 'normal';
+      else if (currentDifficulty === 'normal') newDifficulty = 'easy';
+      else {
+        await replyToLine(replyToken, `現在の難易度は 'easy' で、すでに最低です。`);
+        return res.status(200).end();
+      }
+    } else { // !enghigh
+      if (currentDifficulty === 'easy') newDifficulty = 'normal';
+      else if (currentDifficulty === 'normal') newDifficulty = 'hard';
+      else {
+        await replyToLine(replyToken, `現在の難易度は 'hard' で、すでに最高です。`);
+        return res.status(200).end();
+      }
+    }
+    await kv.set(difficultyKey, newDifficulty);
+    await replyToLine(replyToken, `英単語クイズの難易度を '${newDifficulty}' に変更しました。`);
+    return res.status(200).end();
+  }
+
+  if (userText === "!eng") {
       const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
       const existingGame = await kv.get(gameKey);
       if (existingGame) {
@@ -776,24 +811,22 @@ export default async function handler(req, res) {
           return res.status(200).end();
       }
 
-      let wordList, prize, difficulty;
-      const command = userText;
+      const difficultyKey = `${PREFIX_ENGLISH_DIFFICULTY}${userId}`;
+      const difficulty = await kv.get(difficultyKey) || 'normal';
 
-      if (command === "!engeasy") {
-          wordList = easyWords; prize = 10; difficulty = "easy";
-      } else if (command === "!eng") { // !eng は normal 扱い
-          wordList = normalWords; prize = 30; difficulty = "normal";
-      } else if (command === "!enghard") {
-          wordList = hardWords; prize = 50; difficulty = "hard";
-      } else {
-          // !eng... だけど上記に一致しない場合は何もしない
-          return res.status(200).end();
+      let wordList, prize;
+      if (difficulty === 'easy') {
+          wordList = easyWords; prize = 10;
+      } else if (difficulty === 'normal') {
+          wordList = normalWords; prize = 30;
+      } else { // hard
+          wordList = hardWords; prize = 50;
       }
 
       const word = wordList[Math.floor(Math.random() * wordList.length)];
       await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
 
-      await replyToLine(replyToken, `この日本語を英訳せよ：\n\n「${word.japanese}」`);
+      await replyToLine(replyToken, `[${difficulty}] この日本語を英訳せよ：\n\n「${word.japanese}」`);
       return res.status(200).end();
   }
   // --- ガチャ機能 ---
@@ -883,17 +916,6 @@ export default async function handler(req, res) {
   }
   // -----------------
 
-  if (userText === "!eng_select_difficulty") {
-    // 難易度選択のQuick Replyを表示
-    await replyToLine(replyToken, "難易度を選んでください。", {
-        items: [
-            { type: "action", action: { type: "message", label: "簡単", text: "!engeasy" } },
-            { type: "action", action: { type: "message", label: "普通", text: "!eng" } },
-            { type: "action", action: { type: "message", label: "難しい", text: "!enghard" } }
-        ]
-    });
-    return res.status(200).end();
-  }
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
 
