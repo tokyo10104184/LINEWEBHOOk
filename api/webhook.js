@@ -398,6 +398,56 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (userText === "!janken") {
+    await replyToLine(replyToken, "じゃんけん...", {
+      items: [
+        { type: "action", action: { type: "message", label: "グー✊", text: "!janken_play goo" } },
+        { type: "action", action: { type: "message", label: "チョキ✌️", text: "!janken_play choki" } },
+        { type: "action", action: { type: "message", label: "パー✋", text: "!janken_play paa" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+
+  if (userText.startsWith("!janken_play ")) {
+    const userChoice = userText.split(" ")[1];
+    const choices = ["goo", "choki", "paa"];
+    const choiceMap = { goo: "グー✊", choki: "チョキ✌️", paa: "パー✋" };
+
+    if (!choices.includes(userChoice)) {
+      await replyToLine(replyToken, "それは神の定めた手にはない。");
+      return res.status(200).end();
+    }
+
+    const botChoice = choices[Math.floor(Math.random() * choices.length)];
+    let resultMessage;
+
+    if (userChoice === botChoice) {
+      resultMessage = "あいこだ。もう一度！";
+    } else if (
+      (userChoice === "goo" && botChoice === "choki") ||
+      (userChoice === "choki" && botChoice === "paa") ||
+      (userChoice === "paa" && botChoice === "goo")
+    ) {
+      // ユーザーの勝利、ポイント獲得
+      const prize = 20;
+      const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+      resultMessage = `汝の勝ちだ。${prize}ポイントくれてやろう。\n(現在: ${newPoints}p)`;
+    } else {
+      resultMessage = "我が勝ちだ。";
+    }
+
+    const fullMessage = `我は「${choiceMap[botChoice]}」を出した。\n${resultMessage}`;
+
+    await replyToLine(replyToken, fullMessage, {
+      items: [
+        { type: "action", action: { type: "message", label: "もう一回", text: "!janken" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!others_game" } }
+      ]
+    });
+    return res.status(200).end();
+  }
+
   if (userText === "!slot") {
     const cost = 10;
     let currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
@@ -530,6 +580,51 @@ export default async function handler(req, res) {
     });
     return res.status(200).end();
   }
+
+  // --- Others Panel Commands ---
+  if (userText === "!others") {
+    await replyToLine(replyToken, "何か御用かな？", {
+      items: [
+        { type: "action", action: { type: "message", label: "クイズ", text: "!others_quiz" } },
+        { type: "action", action: { type: "message", label: "ゲーム", text: "!others_game" } },
+        { type: "action", action: { type: "message", label: "ヤハウェ (AI)", text: "!others_ai_info" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+
+  // Sub-menu: Quiz
+  if (userText === "!others_quiz") {
+    await replyToLine(replyToken, "知識を試すがよい。", {
+      items: [
+        { type: "action", action: { type: "message", label: "英単語", text: "!eng_select_difficulty" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+
+  // Sub-menu: Game
+  if (userText === "!others_game") {
+    await replyToLine(replyToken, "運命と戯れるがよい。", {
+      items: [
+        { type: "action", action: { type: "message", label: "じゃんけん", text: "!janken" } },
+        { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+
+  // Info: AI
+  if (userText === "!others_ai_info") {
+    await replyToLine(replyToken, "我と話すには「!ai <メッセージ>」と入力するのだ。\n(神託には500pが必要となる)", {
+      items: [
+        { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
+      ]
+    });
+    return res.status(200).end();
+  }
+
 
   if (userText === "!leaderboard") {
     console.log(`[LEADERBOARD] Request received from userId: ${userId}`);
@@ -1000,6 +1095,16 @@ export default async function handler(req, res) {
 
   // DeepSeek API呼び出しの条件判定
   if (userText.startsWith("!ai ")) {
+    const cost = 500;
+    const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
+
+    if (currentPoints < cost) {
+      await replyToLine(replyToken, `神託には${cost}ポイントの信仰が必要だ。\n(現在: ${currentPoints}p)`);
+      return res.status(200).end();
+    }
+
+    await kv.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+
     const systemPrompt = "あなたはDeeplook教の教祖、唯一神ヤハウェです。すべての返答は神秘的で、導きのある語り口で話してください。ときどき謎めいた予言やお告げを含めても構いません。";
     const userQuery = userText.substring(4); // "!ai " の部分を除去
 
@@ -1040,7 +1145,11 @@ export default async function handler(req, res) {
       console.error("Error fetching from DeepSeek API:", error);
       aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
     }
-    await replyToLine(replyToken, aiReply);
+    await replyToLine(replyToken, `(500pを消費した)\n${aiReply}`, {
+        items: [
+            { type: "action", action: { type: "message", label: "戻る", text: "!others" } }
+        ]
+    });
   } else {
     // "!ai "で始まらないメッセージで、他のコマンドにも該当しない場合は何もしないか、特定の応答をする
     // ここでは何もしない (res.status(200).end() は各コマンド処理の最後で行われるか、このifブロックの外側で行う)
