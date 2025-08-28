@@ -446,22 +446,10 @@ export default async function handler(req, res) {
     // Quick Replyを定義
     const quickReply = {
       items: [
-        {
-          type: "action",
-          action: {
-            type: "message",
-            label: "もう一度挑戦する",
-            text: "!eng"
-          }
-        },
-        {
-          type: "action",
-          action: {
-            type: "message",
-            label: "メニューに戻る",
-            text: "!others_quiz"
-          }
-        }
+        { type: "action", action: { type: "message", label: "もう一度挑戦する", text: "!eng" } },
+        { type: "action", action: { type: "message", label: "難易度を上げる", text: "!enghigh" } },
+        { type: "action", action: { type: "message", label: "難易度を下げる", text: "!englow" } },
+        { type: "action", action: { type: "message", label: "メニューに戻る", text: "!others_quiz" } }
       ]
     };
 
@@ -700,10 +688,7 @@ export default async function handler(req, res) {
   if (userText === "!others_quiz") {
     await replyToLine(replyToken, "知識を試すがよい。", {
       items: [
-        { type: "action", action: { type: "message", label: "挑戦する", text: "!eng" } },
-        { type: "action", action: { type: "message", label: "難易度を上げる", text: "!enghigh" } },
-        { type: "action", action: { type: "message", label: "難易度を下げる", text: "!englow" } },
-        { type: "action", action: { type: "message", label: "現在の難易度を確認", text: "!eng_status" } },
+        { type: "action", action: { type: "message", label: "英単語", text: "!eng" } },
         { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
       ]
     });
