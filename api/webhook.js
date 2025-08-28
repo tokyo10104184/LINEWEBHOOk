@@ -6,6 +6,7 @@ const KEY_CURRENT_STOCK_PRICE = 'current_stock_price';
 const PREFIX_USER_STOCKS = 'stocks:';
 const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレフィックス
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
+const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
 
 // 英単語リスト
 const easyWords = [
@@ -119,177 +120,279 @@ const normalWords = [
 ];
 
 const hardWords = [
+    { english: ["nuclear"], japanese: "核の、原子力の" },
+    { english: ["flexible"], japanese: "柔軟な" },
+    { english: ["domestic"], japanese: "国内の、家庭の" },
+    { english: ["suspicious"], japanese: "不審な" },
+    { english: ["depressed"], japanese: "意気消沈した" },
+    { english: ["obvious"], japanese: "明らかな" },
+    { english: ["capable"], japanese: "能力がある" },
+    { english: ["efficient"], japanese: "有能な、効率のよい" },
+    { english: ["application"], japanese: "応用、申し込み" },
+    { english: ["intelligence"], japanese: "知能" },
+    { english: ["impatience"], japanese: "いらだち、あせり" },
+    { english: ["welfare"], japanese: "福祉" },
+    { english: ["exhausted"], japanese: "疲れきった" },
+    { english: ["responsible"], japanese: "責任がある" },
+    { english: ["artificial"], japanese: "人工の" },
+    { english: ["mature"], japanese: "成熟した" },
+    { english: ["experiment"], japanese: "実験" },
+    { english: ["conference"], japanese: "会議" },
+    { english: ["reservation"], japanese: "予約" },
+    { english: ["appointment"], japanese: "約束、予約" },
+    { english: ["spill"], japanese: "こぼす" },
+    { english: ["similar"], japanese: "類似した" },
+    { english: ["opposed"], japanese: "反対した" },
+    { english: ["superior"], japanese: "優れた" },
+    { english: ["suitable"], japanese: "適した" },
+    { english: ["exercise"], japanese: "運動" },
+    { english: ["education"], japanese: "教育" },
+    { english: ["business"], japanese: "商売" },
+    { english: ["ruined"], japanese: "だめになった" },
+    { english: ["isolated"], japanese: "孤立した" },
+    { english: ["extended"], japanese: "延長された" },
+    { english: ["starved"], japanese: "非常に空腹な" },
+    { english: ["normal"], japanese: "普通の" },
+    { english: ["specific"], japanese: "具体的な、特定の" },
+    { english: ["curious"], japanese: "好奇心が強い" },
+    { english: ["neat"], japanese: "きちんとした" },
+    { english: ["deliver"], japanese: "配達する" },
+    { english: ["identify"], japanese: "特定する" },
+    { english: ["criticize"], japanese: "批判する" },
+    { english: ["inform"], japanese: "知らせる" },
+    { english: ["observe"], japanese: "観察する" },
+    { english: ["defend"], japanese: "守る" },
+    { english: ["blame"], japanese: "責める" },
+    { english: ["experience"], japanese: "経験する" },
+    { english: ["exact"], japanese: "正確な、まさにその" },
+    { english: ["present"], japanese: "贈る、提出する" },
+    { english: ["inherit"], japanese: "相続する" },
+    { english: ["attract"], japanese: "魅惑する、引き寄せる" },
+    { english: ["delicate"], japanese: "繊細な" },
+    { english: ["combine"], japanese: "結び付ける" },
+    { english: ["conclude"], japanese: "結論を下す" },
+    { english: ["generate"], japanese: "発生させる" },
+    { english: ["interrupt"], japanese: "妨げる" },
+    { english: ["regulation"], japanese: "規制" },
+    { english: ["emergency"], japanese: "緊急" },
+    { english: ["farewell"], japanese: "別れ" },
+    { english: ["mammal"], japanese: "ほ乳動物" },
+    { english: ["public"], japanese: "公共の" },
+    { english: ["private"], japanese: "私的な" },
+    { english: ["site"], japanese: "現場、サイト" },
+    { english: ["attempt"], japanese: "試み" },
+    { english: ["practical"], japanese: "実際的な、現実的な" },
+    { english: ["conservative"], japanese: "保守的な" },
+    { english: ["stressful"], japanese: "ストレスのたまる" },
+    { english: ["helpful"], japanese: "役に立つ" },
+    { english: ["memory"], japanese: "記憶力" },
+    { english: ["transplant"], japanese: "移植" },
+    { english: ["politics"], japanese: "政治" },
+    { english: ["economy"], japanese: "経済" },
+    { english: ["employee"], japanese: "従業員" },
+    { english: ["emotionally"], japanese: "感情的に" },
+    { english: ["drastically"], japanese: "徹底的に" },
+    { english: ["initially"], japanese: "最初に" },
+    { english: ["fortunately"], japanese: "幸いにも" },
+    { english: ["background"], japanese: "背景" },
+    { english: ["content"], japanese: "内容" },
+    { english: ["complicated"], japanese: "複雑な" },
+    { english: ["potential"], japanese: "潜在的な" },
+    { english: ["vague"], japanese: "あいまいな" },
+    { english: ["achieve"], japanese: "成し遂げる" },
+    { english: ["promote"], japanese: "促進する" },
+    { english: ["overcome"], japanese: "克服する" },
+    { english: ["involve"], japanese: "伴う、必要とする" },
+    { english: ["indirectly"], japanese: "間接的に" },
+    { english: ["currently"], japanese: "現在のところ" },
+    { english: ["immediately"], japanese: "ただちに" },
+    { english: ["completely"], japanese: "完全に" },
+    { english: ["personal"], japanese: "個人的な" },
+    { english: ["casual"], japanese: "ふだんの、カジュアルな" },
+    { english: ["serious"], japanese: "重大な、まじめな" },
+    { english: ["distinction"], japanese: "区別" },
+    { english: ["applause"], japanese: "拍手" },
+    { english: ["invention"], japanese: "発明" },
+    { english: ["volume"], japanese: "巻、音量" },
+    { english: ["gradually"], japanese: "徐々に" },
+    { english: ["efficiently"], japanese: "能率的に" },
+    { english: ["especially"], japanese: "特に" },
+    { english: ["precisely"], japanese: "正確に" },
+    { english: ["connect"], japanese: "つながる" }
+];
+
+const expertWords = [
     // 既存の単語
-    { english: "abundant", japanese: "豊富な" }, { english: "controversial", japanese: "論争の的となる" },
-    { english: "demonstrate", japanese: "実証する" }, { english: "exaggerate", japanese: "誇張する" },
-    { english: "fundamental", japanese: "基本的な" }, { english: "sophisticated", japanese: "洗練された" },
-    { english: "simultaneously", japanese: "同時に" }, { english: "reluctant", japanese: "気が進まない" },
-    { english: "profound", japanese: "深遠な" }, { english: "perspective", japanese: "視点" },
-    { english: "inevitable", japanese: "避けられない" }, { english: "implement", japanese: "実行する" },
-    { english: "hypothesis", japanese: "仮説" }, { english: "gregarious", japanese: "社交的な" },
-    { english: "fluctuate", japanese: "変動する" }, { english: "eloquent", japanese: "雄弁な" },
-    { english: "distinguish", japanese: "見分ける" }, { english: "conscientious", japanese: "誠実な" },
-    { english: "benevolent", japanese: "慈悲深い" }, { english: "anticipate", japanese: "予期する" },
-    { english: "vulnerable", japanese: "脆弱な" }, { english: "ubiquitous", japanese: "どこにでもある" },
-    { english: "tentative", japanese: "仮の" }, { english: "substantial", japanese: "かなりの" },
-    { english: "spontaneous", japanese: "自発的な" }, { english: "scrutinize", japanese: "精査する" },
+    { english: ["abundant"], japanese: "豊富な" }, { english: ["controversial"], japanese: "論争の的となる" },
+    { english: ["demonstrate"], japanese: "実証する" }, { english: ["exaggerate"], japanese: "誇張する" },
+    { english: ["fundamental"], japanese: "基本的な" }, { english: ["sophisticated"], japanese: "洗練された" },
+    { english: ["simultaneously"], japanese: "同時に" }, { english: ["reluctant"], japanese: "気が進まない" },
+    { english: ["profound"], japanese: "深遠な" }, { english: ["perspective"], japanese: "視点" },
+    { english: ["inevitable"], japanese: "避けられない" }, { english: ["implement"], japanese: "実行する" },
+    { english: ["hypothesis"], japanese: "仮説" }, { english: ["gregarious"], japanese: "社交的な" },
+    { english: ["fluctuate"], japanese: "変動する" }, { english: ["eloquent"], japanese: "雄弁な" },
+    { english: ["distinguish"], japanese: "見分ける" }, { english: ["conscientious"], japanese: "誠実な" },
+    { english: ["benevolent"], japanese: "慈悲深い" }, { english: ["anticipate"], japanese: "予期する" },
+    { english: ["vulnerable"], japanese: "脆弱な" }, { english: ["ubiquitous"], japanese: "どこにでもある" },
+    { english: ["tentative"], japanese: "仮の" }, { english: ["substantial"], japanese: "かなりの" },
+    { english: ["spontaneous"], japanese: "自発的な" }, { english: ["scrutinize"], japanese: "精査する" },
     // 追加の単語
-    { english: "accommodate", japanese: "収容する、適応させる" }, { english: "accumulate", japanese: "蓄積する" },
-    { english: "accurate", japanese: "正確な" }, { english: "acquire", japanese: "習得する" },
-    { english: "adequate", japanese: "十分な、適切な" }, { english: "adjacent", japanese: "隣接した" },
-    { english: "advocate", japanese: "主張する、支持者" }, { english: "aesthetic", japanese: "美的な" },
-    { english: "affluent", japanese: "裕福な" }, { english: "aggregate", japanese: "総計、集合体" },
-    { english: "allocate", japanese: "割り当てる" }, { english: "ambiguous", japanese: "曖昧な" },
-    { english: "amend", japanese: "修正する" }, { english: "analogy", japanese: "類推" },
-    { english: "anonymous", japanese: "匿名の" }, { english: "apparatus", japanese: "装置" },
-    { english: "arbitrary", japanese: "任意の、独断的な" }, { english: "articulate", japanese: "明瞭に話す" },
-    { english: "assert", japanese: "断言する" }, { english: "attribute", japanese: "属性、〜のせいにする" },
-    { english: "authentic", japanese: "本物の" }, { english: "bias", japanese: "偏見" },
-    { english: "catastrophe", japanese: "大災害" }, { english: "coincide", japanese: "同時に起こる" },
-    { english: "collaborate", japanese: "協力する" }, { english: "coherent", japanese: "一貫した" },
-    { english: "compatible", japanese: "互換性のある" }, { english: "compel", japanese: "強いる" },
-    { english: "compensate", japanese: "補償する" }, { english: "competent", japanese: "有能な" },
-    { english: "complement", japanese: "補完するもの" }, { english: "comprehensive", japanese: "包括的な" },
-    { english: "conceive", japanese: "思いつく" }, { english: "condemn", japanese: "非難する" },
-    { english: "confront", japanese: "直面する" }, { english: "consensus", japanese: "合意" },
-    { english: "consecutive", japanese: "連続的な" }, { english: "consolidate", japanese: "統合する" },
-    { english: "constitute", japanese: "構成する" }, { english: "contemplate", japanese: "熟考する" },
-    { "english": "contradict", "japanese": "矛盾する" }, { "english": "convene", "japanese": "召集する" },
-    { "english": "correlate", "japanese": "相関させる" }, { "english": "credibility", "japanese": "信頼性" },
-    { "english": "criterion", "japanese": "基準" }, { "english": "cultivate", "japanese": "育成する" },
-    { "english": "cumulative", "japanese": "累積的な" }, { "english": "cynical", "japanese": "皮肉な" },
-    { "english": "debris", "japanese": "破片、がれき" }, { "english": "deceive", "japanese": "だます" },
-    { "english": "deduce", "japanese": "推論する" }, { "english": "deficiency", "japanese": "欠乏" },
-    { "english": "deliberate", "japanese": "意図的な、慎重な" }, { "english": "depict", "japanese": "描く" },
-    { "english": "deprive", "japanese": "奪う" }, { "english": "derive", "japanese": "由来する" },
-    { "english": "deteriorate", "japanese": "悪化する" }, { "english": "deviate", "japanese": "逸脱する" },
-    { "english": "devise", "japanese": "考案する" }, { "english": "differentiate", "japanese": "区別する" },
-    { "english": "dilemma", "japanese": "ジレンマ" }, { "english": "diligent", "japanese": "勤勉な" },
-    { "english": "discourse", "japanese": "談話、講演" }, { "english": "discrepancy", "japanese": "不一致" },
-    { "english": "disperse", "japanese": "分散させる" }, { "english": "disrupt", "japanese": "混乱させる" },
-    { "english": "dissipate", "japanese": "消散させる" }, { "english": "divert", "japanese": "そらす" },
-    { "english": "doctrine", "japanese": "教義" }, { "english": "domain", "japanese": "領域" },
-    { "english": "dubious", "japanese": "疑わしい" }, { "english": "eccentric", "japanese": "風変わりな" },
-    { "english": "elaborate", "japanese": "詳しく述べる、精巧な" }, { "english": "eligible", "japanese": "資格のある" },
-    { "english": "embody", "japanese": "具体化する" }, { "english": "embrace", "japanese": "受け入れる" },
-    { "english": "emerge", "japanese": "現れる" }, { "english": "empirical", "japanese": "経験的な" },
-    { "english": "encompass", "japanese": "含む" }, { "english": "endorse", "japanese": "支持する" },
-    { "english": "enhance", "japanese": "高める" }, { "english": "enormous", "japanese": "巨大な" },
-    { "english": "entity", "japanese": "実体" }, { "english": "entrepreneur", "japanese": "起業家" },
-    { "english": "equilibrium", "japanese": "均衡" }, { "english": "eradicate", "japanese": "根絶する" },
-    { "english": "erroneous", "japanese": "誤った" }, { "english": "escalate", "japanese": "段階的に拡大する" },
-    { "english": "evaluate", "japanese": "評価する" }, { "english": "evoke", "japanese": "呼び起こす" },
-    { "english": "exploit", "japanese": "開発する、搾取する" }, { "english": "explicit", "japanese": "明確な" },
-    { "english": "facilitate", "japanese": "促進する" }, { "english": "feasible", "japanese": "実行可能な" },
-    { "english": "finite", "japanese": "有限の" }, { "english": "flaw", "japanese": "欠陥" },
-    { "english": "foster", "japanese": "育成する" }, { "english": "franchise", "japanese": "フランチャイズ" },
-    { "english": "fraud", "japanese": "詐欺" }, { "english": "futile", "japanese": "無駄な" },
-    { "english": "generic", "japanese": "一般的な" }, { "english": "genuine", "japanese": "本物の" },
-    { "english": "graphical", "japanese": "図式の" }, { "english": "gravity", "japanese": "重力、重大さ" },
-    { "english": "heritage", "japanese": "遺産" }, { "english": "hierarchy", "japanese": "階層" },
-    { "english": "homogeneous", "japanese": "均質の" }, { "english": "ideology", "japanese": "イデオロギー" },
-    { "english": "immerse", "japanese": "浸す" }, { "english": "imminent", "japanese": "差し迫った" },
-    { "english": "impair", "japanese": "損なう" }, { "english": "impartial", "japanese": "公平な" },
-    { "english": "impede", "japanese": "妨げる" }, { "english": "imperative", "japanese": "必須の" },
-    { "english": "implicit", "japanese": "暗黙の" }, { "english": "impose", "japanese": "課す" },
-    { "english": "inadequate", "japanese": "不十分な" }, { "english": "incessant", "japanese": "絶え間ない" },
-    { "english": "inclined", "japanese": "〜する傾向がある" }, { "english": "incompatible", "japanese": "互換性のない" },
-    { "english": "incorporate", "japanese": "組み込む" }, { "english": "indigenous", "japanese": "固有の" },
-    { "english": "induce", "japanese": "誘発する" }, { "english": "infer", "japanese": "推測する" },
-    { "english": "inherent", "japanese": "固有の" }, { "english": "inhibit", "japanese": "抑制する" },
-    { "english": "initiate", "japanese": "始める" }, { "english": "innovative", "japanese": "革新的な" },
-    { "english": "insatiable", "japanese": "飽くことのない" }, { "english": "insight", "japanese": "洞察" },
-    { "english": "integral", "japanese": "不可欠な" }, { "english": "integrate", "japanese": "統合する" },
-    { "english": "integrity", "japanese": "誠実さ" }, { "english": "interim", "japanese": "中間の" },
-    { "english": "intervene", "japanese": "介入する" }, { "english": "intricate", "japanese": "複雑な" },
-    { "english": "intrinsic", "japanese": "本来備わっている" }, { "english": "invoke", "japanese": "呼び起こす、発動する" },
-    { "english": "irrelevant", "japanese": "無関係な" }, { "english": "jeopardy", "japanese": "危険" },
-    { "english": "judicial", "japanese": "司法の" }, { "english": "jurisdiction", "japanese": "司法権" },
-    { "english": "justify", "japanese": "正当化する" }, { "english": "latent", "japanese": "潜在的な" },
-    { "english": "lavish", "japanese": "気前の良い" }, { "english": "legacy", "japanese": "遺産" },
-    { "english": "legitimate", "japanese": "正当な" }, { "english": "leverage", "japanese": "てこ、影響力" },
-    { "english": "linguistic", "japanese": "言語の" }, { "english": "lucrative", "japanese": "儲かる" },
-    { "english": "magnify", "japanese": "拡大する" }, { "english": "magnitude", "japanese": "大きさ、重要性" },
-    { "english": "mainstream", "japanese": "主流" }, { "english": "malicious", "japanese": "悪意のある" },
-    { "english": "manipulate", "japanese": "操作する" }, { "english": "marginal", "japanese": "わずかな" },
-    { "english": "mediate", "japanese": "仲介する" }, { "english": "metaphor", "japanese": "比喩" },
-    { "english": "meticulous", "japanese": "細心な" }, { "english": "migrate", "japanese": "移住する" },
-    { "english": "milestone", "japanese": "画期的な出来事" }, { "english": "minute", "japanese": "微小な" },
-    { "english": "miscellaneous", "japanese": "雑多な" }, { "english": "momentum", "japanese": "勢い" },
-    { "english": "monotonous", "japanese": "単調な" }, { "english": "mutual", "japanese": "相互の" },
-    { "english": "narrative", "japanese": "物語" }, { "english": "negligible", "japanese": "無視できるほどの" },
-    { "english": "notion", "japanese": "概念" }, { "english": "notorious", "japanese": "悪名高い" },
-    { "english": "novel", "japanese": "斬新な" }, { "english": "nurture", "japanese": "育む" },
-    { "english": "obsolete", "japanese": "時代遅れの" }, { "english": "obstinate", "japanese": "頑固な" },
-    { "english": "offset", "japanese": "相殺する" }, { "english": "omit", "japanese": "省略する" },
-    { "english": "omnipotent", "japanese": "全能の" }, { "english": "onset", "japanese": "始まり" },
-    { "english": "optimal", "japanese": "最適な" }, { "english": "orient", "japanese": "向ける" },
-    { "english": "paradigm", "japanese": "パラダイム" }, { "english": "paradox", "japanese": "逆説" },
-    { "english": "parameter", "japanese": "媒介変数" }, { "english": "paramount", "japanese": "最高の" },
-    { "english": "partial", "japanese": "部分的な" }, { "english": "perceive", "japanese": "知覚する" },
-    { "english": "perennial", "japanese": "長続きする" }, { "english": "peripheral", "japanese": "周辺の" },
-    { "english": "perpetuate", "japanese": "永続させる" }, { "english": "plausible", "japanese": "もっともらしい" },
-    { "english": "ponder", "japanese": "熟考する" }, { "english": "postulate", "japanese": "仮定する" },
-    { "english": "pragmatic", "japanese": "実用的な" }, { "english": "precedent", "japanese": "前例" },
-    { "english": "preclude", "japanese": "排除する" }, { "english": "predecessor", "japanese": "前任者" },
-    { "english": "predominantly", "japanese": "主に" }, { "english": "preliminary", "japanese": "予備の" },
-    { "english": "premise", "japanese": "前提" }, { "english": "prevail", "japanese": "普及している" },
-    { "english": "pristine", "japanese": "新品同様の" }, { "english": "proficient", "japanese": "熟達した" },
-    { "english": "prohibit", "japanese": "禁止する" }, { "english": "prolific", "japanese": "多作の" },
-    { "english": "prolong", "japanese": "延長する" }, { "english": "prompt", "japanese": "促す" },
-    { "english": "prone", "japanese": "傾向がある" }, { "english": "propagate", "japanese": "繁殖させる" },
-    { "english": "protocol", "japanese": "議定書" }, { "english": "proxy", "japanese": "代理" },
-    { "english": "qualitative", "japanese": "質的な" }, { "english": "quantitative", "japanese": "量的な" },
-    { "english": "quota", "japanese": "割り当て" }, { "english": "radical", "japanese": "根本的な" },
-    { "english": "rationale", "japanese": "理論的根拠" }, { "english": "reciprocal", "japanese": "相互の" },
-    { "english": "reconcile", "japanese": "和解させる" }, { "english": "redundant", "japanese": "余分な" },
-    { "english": "refute", "japanese": "反論する" }, { "english": "reimburse", "japanese": "払い戻す" },
-    { "english": "reinforce", "japanese": "強化する" }, { "english": "relegate", "japanese": "格下げする" },
-    { "english": "remedy", "japanese": "治療法" }, { "english": "render", "japanese": "〜にする" },
-    { "english": "replicate", "japanese": "複製する" }, { "english": "repress", "japanese": "抑制する" },
-    { "english": "reputable", "japanese": "評判の良い" }, { "english": "rescind", "japanese": "取り消す" },
-    { "english": "residual", "japanese": "残りの" }, { "english": "resilient", "japanese": "回復力のある" },
-    { "english": "respectively", "japanese": "それぞれ" }, { "english": "resurgence", "japanese": "復活" },
-    { "english": "retain", "japanese": "保持する" }, { "english": "retaliate", "japanese": "報復する" },
-    { "english": "retrieve", "japanese": "取り戻す" }, { "english": "retrospect", "japanese": "回顧" },
-    { "english": "revenue", "japanese": "歳入" }, { "english": "revise", "japanese": "修正する" },
-    { "english": "robust", "japanese": "頑健な" }, { "english": "rustic", "japanese": "素朴な" },
-    { "english": "sanction", "japanese": "制裁" }, { "english": "saturate", "japanese": "飽和させる" },
-    { "english": "savvy", "japanese": "精通している" }, { "english": "scenario", "japanese": "シナリオ" },
-    { "english": "scope", "japanese": "範囲" }, { "english": "sector", "japanese": "部門" },
-    { "english": "sedentary", "japanese": "座りがちの" }, { "english": "segment", "japanese": "部分" },
-    { "english": "sequentially", "japanese": "連続的に" }, { "english": "sever", "japanese": "切断する" },
-    { "english": "skeptical", "japanese": "懐疑的な" }, { "english": "soar", "japanese": "急上昇する" },
-    { "english": "solely", "japanese": "単に" }, { "english": "solidarity", "japanese": "連帯" },
-    { "english": "spawn", "japanese": "生み出す" }, { "english": "speculate", "japanese": "推測する" },
-    { "english": "stagnant", "japanese": "停滞した" }, { "english": "stipulate", "japanese": "規定する" },
-    { "english": "strive", "japanese": "努力する" }, { "english": "subsequent", "japanese": "その後の" },
-    { "english": "subsidy", "japanese": "補助金" }, { "english": "subtle", "japanese": "微妙な" },
-    { "english": "suffice", "japanese": "十分である" }, { "english": "superficial", "japanese": "表面的な" },
-    { "english": "supplement", "japanese": "補足" }, { "english": "suppress", "japanese": "抑圧する" },
-    { "english": "surge", "japanese": "急増" }, { "english": "surplus", "japanese": "余剰" },
-    { "english": "susceptible", "japanese": "影響を受けやすい" }, { "english": "sustain", "japanese": "持続する" },
-    { "english": "synthesis", "japanese": "統合" }, { "english": "systematic", "japanese": "体系的な" },
-    { "english": "tacit", "japanese": "暗黙の" }, { "english": "tackle", "japanese": "取り組む" },
-    { "english": "tangible", "japanese": "有形の" }, { "english": "tariff", "japanese": "関税" },
-    { "english": "temporal", "japanese": "時間の" }, { "english": "terminate", "japanese": "終わらせる" },
-    { "english": "thesis", "japanese": "論文" }, { "english": "threshold", "japanese": "敷居、始まり" },
-    { "english": "thrive", "japanese": "繁栄する" }, { "english": "toxic", "japanese": "有毒な" },
-    { "english": "trajectory", "japanese": "軌道" }, { "english": "tranquil", "japanese": "静かな" },
-    { "english": "transcend", "japanese": "超越する" }, { "english": "transform", "japanese": "変形させる" },
-    { "english": "transparent", "japanese": "透明な" }, { "english": "trigger", "japanese": "引き起こす" },
-    { "english": "trivial", "japanese": "些細な" }, { "english": "turbulent", "japanese": "荒れ狂う" },
-    { "english": "underlying", "japanese": "根本的な" }, { "english": "undermine", "japanese": "弱める" },
-    { "english": "unify", "japanese": "統一する" }, { "english": "unprecedented", "japanese": "前例のない" },
-    { "english": "uphold", "japanese": "支持する" }, { "english": "utility", "japanese": "実用性" },
-    { "english": "utilize", "japanese": "利用する" }, { "english": "vague", "japanese": "曖昧な" },
-    { "english": "validate", "japanese": "検証する" }, { "english": "vanish", "japanese": "消える" },
-    { "english": "variable", "japanese": "変数" }, { "english": "velocity", "japanese": "速度" },
-    { "english": "verbal", "japanese": "言葉の" }, { "english": "verify", "japanese": "検証する" },
-    { "english": "versatile", "japanese": "多才な" }, { "english": "viable", "japanese": "実行可能な" },
-    { "english": "vigilant", "japanese": "油断のない" }, { "english": "virtual", "japanese": "仮想の" },
-    { "english": "void", "japanese": "無効な" }, { "english": "volatile", "japanese": "不安定な" },
-    { "english": "warrant", "japanese": "正当化する" }, { "english": "yield", "japanese": "産出する" },
+    { english: ["accommodate"], japanese: "収容する、適応させる" }, { english: ["accumulate"], japanese: "蓄積する" },
+    { english: ["accurate"], japanese: "正確な" }, { english: ["acquire"], japanese: "習得する" },
+    { english: ["adequate"], japanese: "十分な、適切な" }, { english: ["adjacent"], japanese: "隣接した" },
+    { english: ["advocate"], japanese: "主張する、支持者" }, { english: ["aesthetic"], japanese: "美的な" },
+    { english: ["affluent"], japanese: "裕福な" }, { english: ["aggregate"], japanese: "総計、集合体" },
+    { english: ["allocate"], japanese: "割り当てる" }, { english: ["ambiguous"], japanese: "曖昧な" },
+    { english: ["amend"], japanese: "修正する" }, { english: ["analogy"], japanese: "類推" },
+    { english: ["anonymous"], japanese: "匿名の" }, { english: ["apparatus"], japanese: "装置" },
+    { english: ["arbitrary"], japanese: "任意の、独断的な" }, { english: ["articulate"], japanese: "明瞭に話す" },
+    { english: ["assert"], japanese: "断言する" }, { english: ["attribute"], japanese: "属性、〜のせいにする" },
+    { english: ["authentic"], japanese: "本物の" }, { english: ["bias"], japanese: "偏見" },
+    { english: ["catastrophe"], japanese: "大災害" }, { english: ["coincide"], japanese: "同時に起こる" },
+    { english: ["collaborate"], japanese: "協力する" }, { english: ["coherent"], japanese: "一貫した" },
+    { english: ["compatible"], japanese: "互換性のある" }, { english: ["compel"], japanese: "強いる" },
+    { english: ["compensate"], japanese: "補償する" }, { english: ["competent"], japanese: "有能な" },
+    { english: ["complement"], japanese: "補完するもの" }, { english: ["comprehensive"], japanese: "包括的な" },
+    { english: ["conceive"], japanese: "思いつく" }, { english: ["condemn"], japanese: "非難する" },
+    { english: ["confront"], japanese: "直面する" }, { english: ["consensus"], japanese: "合意" },
+    { english: ["consecutive"], japanese: "連続的な" }, { english: ["consolidate"], japanese: "統合する" },
+    { english: ["constitute"], japanese: "構成する" }, { english: ["contemplate"], japanese: "熟考する" },
+    { english: ["contradict"], japanese: "矛盾する" }, { english: ["convene"], japanese: "召集する" },
+    { english: ["correlate"], japanese: "相関させる" }, { english: ["credibility"], japanese: "信頼性" },
+    { english: ["criterion"], japanese: "基準" }, { english: ["cultivate"], japanese: "育成する" },
+    { english: ["cumulative"], japanese: "累積的な" }, { english: ["cynical"], japanese: "皮肉な" },
+    { english: ["debris"], japanese: "破片、がれき" }, { english: ["deceive"], japanese: "だます" },
+    { english: ["deduce"], japanese: "推論する" }, { english: ["deficiency"], japanese: "欠乏" },
+    { english: ["deliberate"], japanese: "意図的な、慎重な" }, { english: ["depict"], japanese: "描く" },
+    { english: ["deprive"], japanese: "奪う" }, { english: ["derive"], japanese: "由来する" },
+    { english: ["deteriorate"], japanese: "悪化する" }, { english: ["deviate"], japanese: "逸脱する" },
+    { english: ["devise"], japanese: "考案する" }, { english: ["differentiate"], japanese: "区別する" },
+    { english: ["dilemma"], japanese: "ジレンマ" }, { english: ["diligent"], japanese: "勤勉な" },
+    { english: ["discourse"], japanese: "談話、講演" }, { english: ["discrepancy"], japanese: "不一致" },
+    { english: ["disperse"], japanese: "分散させる" }, { english: ["disrupt"], japanese: "混乱させる" },
+    { english: ["dissipate"], japanese: "消散させる" }, { english: ["divert"], japanese: "そらす" },
+    { english: ["doctrine"], japanese: "教義" }, { english: ["domain"], japanese: "領域" },
+    { english: ["dubious"], japanese: "疑わしい" }, { english: ["eccentric"], japanese: "風変わりな" },
+    { english: ["elaborate"], japanese: "詳しく述べる、精巧な" }, { english: ["eligible"], japanese: "資格のある" },
+    { english: ["embody"], japanese: "具体化する" }, { english: ["embrace"], japanese: "受け入れる" },
+    { english: ["emerge"], japanese: "現れる" }, { english: ["empirical"], japanese: "経験的な" },
+    { english: ["encompass"], japanese: "含む" }, { english: ["endorse"], japanese: "支持する" },
+    { english: ["enhance"], japanese: "高める" }, { english: ["enormous"], japanese: "巨大な" },
+    { english: ["entity"], japanese: "実体" }, { english: ["entrepreneur"], japanese: "起業家" },
+    { english: ["equilibrium"], japanese: "均衡" }, { english: ["eradicate"], japanese: "根絶する" },
+    { english: ["erroneous"], japanese: "誤った" }, { english: ["escalate"], japanese: "段階的に拡大する" },
+    { english: ["evaluate"], japanese: "評価する" }, { english: ["evoke"], japanese: "呼び起こす" },
+    { english: ["exploit"], japanese: "開発する、搾取する" }, { english: ["explicit"], japanese: "明確な" },
+    { english: ["facilitate"], japanese: "促進する" }, { english: ["feasible"], japanese: "実行可能な" },
+    { english: ["finite"], japanese: "有限の" }, { english: ["flaw"], japanese: "欠陥" },
+    { english: ["foster"], japanese: "育成する" }, { english: ["franchise"], japanese: "フランチャイズ" },
+    { english: ["fraud"], japanese: "詐欺" }, { english: ["futile"], japanese: "無駄な" },
+    { english: ["generic"], japanese: "一般的な" }, { english: ["genuine"], japanese: "本物の" },
+    { english: ["graphical"], japanese: "図式の" }, { english: ["gravity"], japanese: "重力、重大さ" },
+    { english: ["heritage"], japanese: "遺産" }, { english: ["hierarchy"], japanese: "階層" },
+    { english: ["homogeneous"], japanese: "均質の" }, { english: ["ideology"], japanese: "イデオロギー" },
+    { english: ["immerse"], japanese: "浸す" }, { english: ["imminent"], japanese: "差し迫った" },
+    { english: ["impair"], japanese: "損なう" }, { english: ["impartial"], japanese: "公平な" },
+    { english: ["impede"], japanese: "妨げる" }, { english: ["imperative"], japanese: "必須の" },
+    { english: ["implicit"], japanese: "暗黙の" }, { english: ["impose"], japanese: "課す" },
+    { english: ["inadequate"], japanese: "不十分な" }, { english: ["incessant"], japanese: "絶え間ない" },
+    { english: ["inclined"], japanese: "〜する傾向がある" }, { english: ["incompatible"], japanese: "互換性のない" },
+    { english: ["incorporate"], japanese: "組み込む" }, { english: ["indigenous"], japanese: "固有の" },
+    { english: ["induce"], japanese: "誘発する" }, { english: ["infer"], japanese: "推測する" },
+    { english: ["inherent"], japanese: "固有の" }, { english: ["inhibit"], japanese: "抑制する" },
+    { english: ["initiate"], japanese: "始める" }, { english: ["innovative"], japanese: "革新的な" },
+    { english: ["insatiable"], japanese: "飽くことのない" }, { english: ["insight"], japanese: "洞察" },
+    { english: ["integral"], japanese: "不可欠な" }, { english: ["integrate"], japanese: "統合する" },
+    { english: ["integrity"], japanese: "誠実さ" }, { english: ["interim"], japanese: "中間の" },
+    { english: ["intervene"], japanese: "介入する" }, { english: ["intricate"], japanese: "複雑な" },
+    { english: ["intrinsic"], japanese: "本来備わっている" }, { english: ["invoke"], japanese: "呼び起こす、発動する" },
+    { english: ["irrelevant"], japanese: "無関係な" }, { english: ["jeopardy"], japanese: "危険" },
+    { english: ["judicial"], japanese: "司法の" }, { english: ["jurisdiction"], japanese: "司法権" },
+    { english: ["justify"], japanese: "正当化する" }, { english: ["latent"], japanese: "潜在的な" },
+    { english: ["lavish"], japanese: "気前の良い" }, { english: ["legacy"], japanese: "遺産" },
+    { english: ["legitimate"], japanese: "正当な" }, { english: ["leverage"], japanese: "てこ、影響力" },
+    { english: ["linguistic"], japanese: "言語の" }, { english: ["lucrative"], japanese: "儲かる" },
+    { english: ["magnify"], japanese: "拡大する" }, { english: ["magnitude"], japanese: "大きさ、重要性" },
+    { english: ["mainstream"], japanese: "主流" }, { english: ["malicious"], japanese: "悪意のある" },
+    { english: ["manipulate"], japanese: "操作する" }, { english: ["marginal"], japanese: "わずかな" },
+    { english: ["mediate"], japanese: "仲介する" }, { english: ["metaphor"], japanese: "比喩" },
+    { english: ["meticulous"], japanese: "細心な" }, { english: ["migrate"], japanese: "移住する" },
+    { english: ["milestone"], japanese: "画期的な出来事" }, { english: ["minute"], japanese: "微小な" },
+    { english: ["miscellaneous"], japanese: "雑多な" }, { english: ["momentum"], japanese: "勢い" },
+    { english: ["monotonous"], japanese: "単調な" }, { english: ["mutual"], japanese: "相互の" },
+    { english: ["narrative"], japanese: "物語" }, { english: ["negligible"], japanese: "無視できるほどの" },
+    { english: ["notion"], japanese: "概念" }, { english: ["notorious"], japanese: "悪名高い" },
+    { english: ["novel"], japanese: "斬新な" }, { english: ["nurture"], japanese: "育む" },
+    { english: ["obsolete"], japanese: "時代遅れの" }, { english: ["obstinate"], japanese: "頑固な" },
+    { english: ["offset"], japanese: "相殺する" }, { english: ["omit"], japanese: "省略する" },
+    { english: ["omnipotent"], japanese: "全能の" }, { english: ["onset"], japanese: "始まり" },
+    { english: ["optimal"], japanese: "最適な" }, { english: ["orient"], japanese: "向ける" },
+    { english: ["paradigm"], japanese: "パラダイム" }, { english: ["paradox"], japanese: "逆説" },
+    { english: ["parameter"], japanese: "媒介変数" }, { english: ["paramount"], japanese: "最高の" },
+    { english: ["partial"], japanese: "部分的な" }, { english: ["perceive"], japanese: "知覚する" },
+    { english: ["perennial"], japanese: "長続きする" }, { english: ["peripheral"], japanese: "周辺の" },
+    { english: ["perpetuate"], japanese: "永続させる" }, { english: ["plausible"], japanese: "もっともらしい" },
+    { english: ["ponder"], japanese: "熟考する" }, { english: ["postulate"], japanese: "仮定する" },
+    { english: ["pragmatic"], japanese: "実用的な" }, { english: ["precedent"], japanese: "前例" },
+    { english: ["preclude"], japanese: "排除する" }, { english: ["predecessor"], japanese: "前任者" },
+    { english: ["predominantly"], japanese: "主に" }, { english: ["preliminary"], japanese: "予備の" },
+    { english: ["premise"], japanese: "前提" }, { english: ["prevail"], japanese: "普及している" },
+    { english: ["pristine"], japanese: "新品同様の" }, { english: ["proficient"], japanese: "熟達した" },
+    { english: ["prohibit"], japanese: "禁止する" }, { english: ["prolific"], japanese: "多作の" },
+    { english: ["prolong"], japanese: "延長する" }, { english: ["prompt"], japanese: "促す" },
+    { english: ["prone"], japanese: "傾向がある" }, { english: ["propagate"], japanese: "繁殖させる" },
+    { english: ["protocol"], japanese: "議定書" }, { english: ["proxy"], japanese: "代理" },
+    { english: ["qualitative"], japanese: "質的な" }, { english: ["quantitative"], japanese: "量的な" },
+    { english: ["quota"], japanese: "割り当て" }, { english: ["radical"], japanese: "根本的な" },
+    { english: ["rationale"], japanese: "理論的根拠" }, { english: ["reciprocal"], japanese: "相互の" },
+    { english: ["reconcile"], japanese: "和解させる" }, { english: ["redundant"], japanese: "余分な" },
+    { english: ["refute"], japanese: "反論する" }, { english: ["reimburse"], japanese: "払い戻す" },
+    { english: ["reinforce"], japanese: "強化する" }, { english: ["relegate"], japanese: "格下げする" },
+    { english: ["remedy"], japanese: "治療法" }, { english: ["render"], japanese: "〜にする" },
+    { english: ["replicate"], japanese: "複製する" }, { english: ["repress"], japanese: "抑制する" },
+    { english: ["reputable"], japanese: "評判の良い" }, { english: ["rescind"], japanese: "取り消す" },
+    { english: ["residual"], japanese: "残りの" }, { english: ["resilient"], japanese: "回復力のある" },
+    { english: ["respectively"], japanese: "それぞれ" }, { english: ["resurgence"], japanese: "復活" },
+    { english: ["retain"], japanese: "保持する" }, { english: ["retaliate"], japanese: "報復する" },
+    { english: ["retrieve"], japanese: "取り戻す" }, { english: ["retrospect"], japanese: "回顧" },
+    { english: ["revenue"], japanese: "歳入" }, { english: ["revise"], japanese: "修正する" },
+    { english: ["robust"], japanese: "頑健な" }, { english: ["rustic"], japanese: "素朴な" },
+    { english: ["sanction"], japanese: "制裁" }, { english: ["saturate"], japanese: "飽和させる" },
+    { english: ["savvy"], japanese: "精通している" }, { english: ["scenario"], japanese: "シナリオ" },
+    { english: ["scope"], japanese: "範囲" }, { english: ["sector"], japanese: "部門" },
+    { english: ["sedentary"], japanese: "座りがちの" }, { english: ["segment"], japanese: "部分" },
+    { english: ["sequentially"], japanese: "連続的に" }, { english: ["sever"], japanese: "切断する" },
+    { english: ["skeptical"], japanese: "懐疑的な" }, { english: ["soar"], japanese: "急上昇する" },
+    { english: ["solely"], japanese: "単に" }, { english: ["solidarity"], japanese: "連帯" },
+    { english: ["spawn"], japanese: "生み出す" }, { english: ["speculate"], japanese: "推測する" },
+    { english: ["stagnant"], japanese: "停滞した" }, { english: ["stipulate"], japanese: "規定する" },
+    { english: ["strive"], japanese: "努力する" }, { english: ["subsequent"], japanese: "その後の" },
+    { english: ["subsidy"], japanese: "補助金" }, { english: ["subtle"], japanese: "微妙な" },
+    { english: ["suffice"], japanese: "十分である" }, { english: ["superficial"], japanese: "表面的な" },
+    { english: ["supplement"], japanese: "補足" }, { english: ["suppress"], japanese: "抑圧する" },
+    { english: ["surge"], japanese: "急増" }, { english: ["surplus"], japanese: "余剰" },
+    { english: ["susceptible"], japanese: "影響を受けやすい" }, { english: ["sustain"], japanese: "持続する" },
+    { english: ["synthesis"], japanese: "統合" }, { english: ["systematic"], japanese: "体系的な" },
+    { english: ["tacit"], japanese: "暗黙の" }, { english: ["tackle"], japanese: "取り組む" },
+    { english: ["tangible"], japanese: "有形の" }, { english: ["tariff"], japanese: "関税" },
+    { english: ["temporal"], japanese: "時間の" }, { english: ["terminate"], japanese: "終わらせる" },
+    { english: ["thesis"], japanese: "論文" }, { english: ["threshold"], japanese: "敷居、始まり" },
+    { english: ["thrive"], japanese: "繁栄する" }, { english: ["toxic"], japanese: "有毒な" },
+    { english: ["trajectory"], japanese: "軌道" }, { english: ["tranquil"], japanese: "静かな" },
+    { english: ["transcend"], japanese: "超越する" }, { english: ["transform"], japanese: "変形させる" },
+    { english: ["transparent"], japanese: "透明な" }, { english: ["trigger"], japanese: "引き起こす" },
+    { english: ["trivial"], japanese: "些細な" }, { english: ["turbulent"], japanese: "荒れ狂う" },
+    { english: ["underlying"], japanese: "根本的な" }, { english: ["undermine"], japanese: "弱める" },
+    { english: ["unify"], japanese: "統一する" }, { english: ["unprecedented"], japanese: "前例のない" },
+    { english: ["uphold"], japanese: "支持する" }, { english: ["utility"], japanese: "実用性" },
+    { english: ["utilize"], japanese: "利用する" }, { english: ["vague"], japanese: "曖昧な" },
+    { english: ["validate"], japanese: "検証する" }, { english: ["vanish"], japanese: "消える" },
+    { english: ["variable"], japanese: "変数" }, { english: ["velocity"], japanese: "速度" },
+    { english: ["verbal"], japanese: "言葉の" }, { english: ["verify"], japanese: "検証する" },
+    { english: ["versatile"], japanese: "多才な" }, { english: ["viable"], japanese: "実行可能な" },
+    { english: ["vigilant"], japanese: "油断のない" }, { english: ["virtual"], japanese: "仮想の" },
+    { english: ["void"], japanese: "無効な" }, { english: ["volatile"], japanese: "不安定な" },
+    { english: ["warrant"], japanese: "正当化する" }, { english: ["yield"], japanese: "産出する" },
 ];
 
 // グローバル変数としての userPoints, currentStockPrice, userStocks は削除
@@ -348,15 +451,15 @@ export default async function handler(req, res) {
           action: {
             type: "message",
             label: "もう一度挑戦する",
-            text: `!eng${gameData.difficulty === 'normal' ? '' : gameData.difficulty}`
+            text: "!eng"
           }
         },
         {
           type: "action",
           action: {
             type: "message",
-            label: "難易度選択",
-            text: "!eng_select_difficulty" // 新しいコマンドで難易度選択をトリガー
+            label: "メニューに戻る",
+            text: "!others_quiz"
           }
         }
       ]
@@ -597,7 +700,10 @@ export default async function handler(req, res) {
   if (userText === "!others_quiz") {
     await replyToLine(replyToken, "知識を試すがよい。", {
       items: [
-        { type: "action", action: { type: "message", label: "英単語", text: "!eng_select_difficulty" } },
+        { type: "action", action: { type: "message", label: "挑戦する", text: "!eng" } },
+        { type: "action", action: { type: "message", label: "難易度を上げる", text: "!enghigh" } },
+        { type: "action", action: { type: "message", label: "難易度を下げる", text: "!englow" } },
+        { type: "action", action: { type: "message", label: "現在の難易度を確認", text: "!eng_status" } },
         { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
       ]
     });
@@ -621,6 +727,43 @@ export default async function handler(req, res) {
       items: [
         { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
       ]
+    });
+    return res.status(200).end();
+  }
+
+  // --- 英単語ゲーム難易度変更コマンド ---
+  const difficultyLevels = ['easy', 'normal', 'hard', 'expert'];
+
+  if (userText === "!eng_status") {
+    const difficultyKey = `${PREFIX_USER_DIFFICULTY}${userId}`;
+    const currentDifficulty = await kv.get(difficultyKey) || 'normal';
+    await replyToLine(replyToken, `現在の難易度は「${currentDifficulty}」です。`, {
+        items: [{ type: "action", action: { type: "message", label: "戻る", text: "!others_quiz" } }]
+    });
+    return res.status(200).end();
+  }
+
+  if (userText === "!enghigh" || userText === "!englow") {
+    const direction = userText === "!enghigh" ? 1 : -1;
+    const difficultyKey = `${PREFIX_USER_DIFFICULTY}${userId}`;
+    const currentDifficulty = await kv.get(difficultyKey) || 'normal';
+    const currentIndex = difficultyLevels.indexOf(currentDifficulty);
+    let newIndex = currentIndex + direction;
+
+    if (newIndex < 0) newIndex = 0;
+    if (newIndex >= difficultyLevels.length) newIndex = difficultyLevels.length - 1;
+
+    const newDifficulty = difficultyLevels[newIndex];
+
+    let message;
+    if (newDifficulty === currentDifficulty) {
+        message = `難易度は既に上限または下限です。\n(現在: ${currentDifficulty})`;
+    } else {
+        await kv.set(difficultyKey, newDifficulty);
+        message = `難易度を「${newDifficulty}」に変更しました。`;
+    }
+    await replyToLine(replyToken, message, {
+        items: [{ type: "action", action: { type: "message", label: "戻る", text: "!others_quiz" } }]
     });
     return res.status(200).end();
   }
@@ -964,33 +1107,34 @@ export default async function handler(req, res) {
   }
 
   // 英単語ゲームの開始コマンド
-  if (userText.startsWith("!eng")) {
-      const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
-      const existingGame = await kv.get(gameKey);
-      if (existingGame) {
-          await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
-          return res.status(200).end();
-      }
+  if (userText === "!eng") {
+    const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
+    const existingGame = await kv.get(gameKey);
+    if (existingGame) {
+        await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
+        return res.status(200).end();
+    }
 
-      let wordList, prize, difficulty;
-      const command = userText;
+    const difficultyKey = `${PREFIX_USER_DIFFICULTY}${userId}`;
+    const difficulty = await kv.get(difficultyKey) || 'normal';
 
-      if (command === "!engeasy") {
-          wordList = easyWords; prize = 10; difficulty = "easy";
-      } else if (command === "!eng") { // !eng は normal 扱い
-          wordList = normalWords; prize = 30; difficulty = "normal";
-      } else if (command === "!enghard") {
-          wordList = hardWords; prize = 50; difficulty = "hard";
-      } else {
-          // !eng... だけど上記に一致しない場合は何もしない
-          return res.status(200).end();
-      }
+    const difficulties = {
+        easy: { list: easyWords, prize: 10 },
+        normal: { list: normalWords, prize: 30 },
+        hard: { list: hardWords, prize: 50 },
+        expert: { list: expertWords, prize: 100 }
+    };
 
-      const word = wordList[Math.floor(Math.random() * wordList.length)];
-      await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
+    const selectedDifficulty = difficulties[difficulty];
+    const wordList = selectedDifficulty.list;
+    const prize = selectedDifficulty.prize;
 
-      await replyToLine(replyToken, `この日本語を英訳せよ：\n\n「${word.japanese}」`);
-      return res.status(200).end();
+    const word = wordList[Math.floor(Math.random() * wordList.length)];
+    // difficulty も保存しておくことで、回答後のQuick Replyで「もう一度挑戦」が同じ難易度になるようにする
+    await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
+
+    await replyToLine(replyToken, `[${difficulty}] この日本語を英訳せよ：\n\n「${word.japanese}」`);
+    return res.status(200).end();
   }
   // --- ガチャ機能 ---
   const gachaTiers = {
@@ -1078,18 +1222,6 @@ export default async function handler(req, res) {
       return res.status(200).end();
   }
   // -----------------
-
-  if (userText === "!eng_select_difficulty") {
-    // 難易度選択のQuick Replyを表示
-    await replyToLine(replyToken, "難易度を選んでください。", {
-        items: [
-            { type: "action", action: { type: "message", label: "簡単", text: "!engeasy" } },
-            { type: "action", action: { type: "message", label: "普通", text: "!eng" } },
-            { type: "action", action: { type: "message", label: "難しい", text: "!enghard" } }
-        ]
-    });
-    return res.status(200).end();
-  }
 
   // userText と replyToken の存在は上記のチェックで担保されるため、ここでの個別チェックは不要
 
