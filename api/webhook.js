@@ -704,7 +704,11 @@ export default async function handler(req, res) {
       currentStockPrice = await kv.get(KEY_CURRENT_STOCK_PRICE) || 100;
       const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
       const userStockCount = await kv.get(userStockKey) || 0;
-      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}p\n保有株数: ${userStockCount}株`);
+      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}p\n保有株数: ${userStockCount}株`, {
+        items: [
+          { type: "action", action: { type: "message", label: "戻る", text: "!economy_invest" } }
+        ]
+      });
       return res.status(200).end();
     }
 
