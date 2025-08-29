@@ -1,7 +1,6 @@
 import { kv } from '@vercel/kv';
 
 const KEY_LEADERBOARD_POINTS = 'leaderboard_points';
-const PREFIX_USER_NAME = 'username:';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -19,7 +18,6 @@ export default async function handler(req, res) {
 
   const userText = event.message.text;
   const replyToken = event.replyToken;
-  const userId = event.source.userId;
 
   if (userText === "!ping") {
     try {
@@ -37,46 +35,26 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (userText === "!work") {
+  if (userText.startsWith("!addscore ")) {
     try {
-      const newPoints = await kv.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
-      await replyToLine(replyToken, `50ポイント獲得しました。 (現在: ${newPoints} ポイント)`);
+      const parts = userText.split(" ");
+      if (parts.length !== 3) {
+        await replyToLine(replyToken, "Invalid format. Use: !addscore <score> <member>");
+        return res.status(200).end();
+      }
+      const score = parseInt(parts[1], 10);
+      const member = parts[2];
+
+      if (isNaN(score) || !member) {
+        await replyToLine(replyToken, "Invalid score or member. Use: !addscore <score> <member>");
+        return res.status(200).end();
+      }
+
+      await kv.zadd(KEY_LEADERBOARD_POINTS, { score, member });
+      await replyToLine(replyToken, `Added ${member} with score ${score}.`);
+
     } catch (error) {
-      console.error("KV Error on !work:", error);
-      await replyToLine(replyToken, `An error occurred with the KV store: ${error.message}`);
-    }
-    return res.status(200).end();
-  }
-
-  if (userText === "!point") {
-    try {
-      const currentPoints = await kv.zscore(KEY_LEADERBOARD_POINTS, userId) || 0;
-      await replyToLine(replyToken, `現在のポイント: ${currentPoints} ポイント`);
-    } catch (error) {
-      console.error("KV Error on !point:", error);
-      await replyToLine(replyToken, `An error occurred with the KV store: ${error.message}`);
-    }
-    return res.status(200).end();
-  }
-
-  if (userText.startsWith("!register ")) {
-    const username = userText.substring(10).trim();
-    const usernameKey = `${PREFIX_USER_NAME}${userId}`;
-
-    if (username.length < 2 || username.length > 15) {
-      await replyToLine(replyToken, "ユーザー名は2文字以上15文字以下で入力してください。");
-      return res.status(200).end();
-    }
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      await replyToLine(replyToken, "ユーザー名には、英数字とアンダースコア(_)のみ使用できます。");
-      return res.status(200).end();
-    }
-
-    try {
-      await kv.set(usernameKey, username);
-      await replyToLine(replyToken, `ユーザー名を「${username}」に設定しました。`);
-    } catch (error) {
-      console.error("KV Error on !register:", error);
+      console.error("KV Error on !addscore:", error);
       await replyToLine(replyToken, `An error occurred with the KV store: ${error.message}`);
     }
     return res.status(200).end();
@@ -84,26 +62,20 @@ export default async function handler(req, res) {
 
   if (userText === "!leaderboard") {
     try {
-      const leaderboardData = await kv.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, { withScores: true });
-      let leaderboardMessage = "ポイントランキング\n";
+      // Hypothesize that zrange supports rev and withScores options
+      const leaderboardData = await kv.zrange(KEY_LEADERBOARD_POINTS, 0, 9, {
+        rev: true,
+        withScores: true
+      });
 
+      let leaderboardMessage = "ポイントランキング\n";
       if (!leaderboardData || leaderboardData.length === 0) {
         leaderboardMessage += "まだランキングに誰もいません。\n";
       } else {
-        const userIds = [];
         for (let i = 0; i < leaderboardData.length; i += 2) {
-          userIds.push(leaderboardData[i]);
-        }
-
-        const usernameKeys = userIds.map(uid => `${PREFIX_USER_NAME}${uid}`);
-        const usernames = usernameKeys.length > 0 ? await kv.mget(...usernameKeys) : [];
-
-        for (let i = 0; i < leaderboardData.length; i += 2) {
-          const uid = leaderboardData[i];
-          const points = leaderboardData[i + 1];
-          const username = usernames[i / 2];
-          const displayName = username || `...${uid.slice(-4)}`;
-          leaderboardMessage += `${(i / 2) + 1}. ${displayName} : ${points}p\n`;
+          const member = leaderboardData[i];
+          const score = leaderboardData[i + 1];
+          leaderboardMessage += `${(i / 2) + 1}. ${member} : ${score}p\n`;
         }
       }
       await replyToLine(replyToken, leaderboardMessage);
@@ -114,7 +86,6 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // いずれのコマンドにも一致しない場合
   res.status(200).end();
 }
 
