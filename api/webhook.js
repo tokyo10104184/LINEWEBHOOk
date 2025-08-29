@@ -446,22 +446,10 @@ export default async function handler(req, res) {
     // Quick Replyを定義
     const quickReply = {
       items: [
-        {
-          type: "action",
-          action: {
-            type: "message",
-            label: "もう一度挑戦する",
-            text: "!eng"
-          }
-        },
-        {
-          type: "action",
-          action: {
-            type: "message",
-            label: "メニューに戻る",
-            text: "!others_quiz"
-          }
-        }
+        { type: "action", action: { type: "message", label: "もう一度挑戦する", text: "!eng" } },
+        { type: "action", action: { type: "message", label: "難易度を上げる", text: "!enghigh" } },
+        { type: "action", action: { type: "message", label: "難易度を下げる", text: "!englow" } },
+        { type: "action", action: { type: "message", label: "メニューに戻る", text: "!others_quiz" } }
       ]
     };
 
@@ -700,10 +688,7 @@ export default async function handler(req, res) {
   if (userText === "!others_quiz") {
     await replyToLine(replyToken, "知識を試すがよい。", {
       items: [
-        { type: "action", action: { type: "message", label: "挑戦する", text: "!eng" } },
-        { type: "action", action: { type: "message", label: "難易度を上げる", text: "!enghigh" } },
-        { type: "action", action: { type: "message", label: "難易度を下げる", text: "!englow" } },
-        { type: "action", action: { type: "message", label: "現在の難易度を確認", text: "!eng_status" } },
+        { type: "action", action: { type: "message", label: "英単語", text: "!eng" } },
         { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
       ]
     });
@@ -755,16 +740,15 @@ export default async function handler(req, res) {
 
     const newDifficulty = difficultyLevels[newIndex];
 
-    let message;
     if (newDifficulty === currentDifficulty) {
-        message = `難易度は既に上限または下限です。\n(現在: ${currentDifficulty})`;
+        await replyToLine(replyToken, `難易度は既に上限または下限です。\n(現在: ${currentDifficulty})`, {
+            items: [{ type: "action", action: { type: "message", label: "戻る", text: "!others_quiz" } }]
+        });
     } else {
         await kv.set(difficultyKey, newDifficulty);
-        message = `難易度を「${newDifficulty}」に変更しました。`;
+        const message = `難易度を「${newDifficulty}」に変更しました。`;
+        await startEnglishGame(userId, replyToken, message);
     }
-    await replyToLine(replyToken, message, {
-        items: [{ type: "action", action: { type: "message", label: "戻る", text: "!others_quiz" } }]
-    });
     return res.status(200).end();
   }
 
@@ -1108,32 +1092,7 @@ export default async function handler(req, res) {
 
   // 英単語ゲームの開始コマンド
   if (userText === "!eng") {
-    const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
-    const existingGame = await kv.get(gameKey);
-    if (existingGame) {
-        await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
-        return res.status(200).end();
-    }
-
-    const difficultyKey = `${PREFIX_USER_DIFFICULTY}${userId}`;
-    const difficulty = await kv.get(difficultyKey) || 'normal';
-
-    const difficulties = {
-        easy: { list: easyWords, prize: 10 },
-        normal: { list: normalWords, prize: 30 },
-        hard: { list: hardWords, prize: 50 },
-        expert: { list: expertWords, prize: 100 }
-    };
-
-    const selectedDifficulty = difficulties[difficulty];
-    const wordList = selectedDifficulty.list;
-    const prize = selectedDifficulty.prize;
-
-    const word = wordList[Math.floor(Math.random() * wordList.length)];
-    // difficulty も保存しておくことで、回答後のQuick Replyで「もう一度挑戦」が同じ難易度になるようにする
-    await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
-
-    await replyToLine(replyToken, `[${difficulty}] この日本語を英訳せよ：\n\n「${word.japanese}」`);
+    await startEnglishGame(userId, replyToken);
     return res.status(200).end();
   }
   // --- ガチャ機能 ---
@@ -1293,6 +1252,38 @@ export default async function handler(req, res) {
   }
 
   res.status(200).end();
+}
+
+// 英単語ゲームを開始する共通関数
+async function startEnglishGame(userId, replyToken, precedingMessage = "") {
+    const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
+    const existingGame = await kv.get(gameKey);
+    if (existingGame) {
+        await replyToLine(replyToken, `前回の問題にまだ回答していません。「${existingGame.japanese}」の英訳は？`);
+        return;
+    }
+
+    const difficultyKey = `${PREFIX_USER_DIFFICULTY}${userId}`;
+    const difficulty = await kv.get(difficultyKey) || 'normal';
+
+    const difficulties = {
+        easy: { list: easyWords, prize: 10 },
+        normal: { list: normalWords, prize: 30 },
+        hard: { list: hardWords, prize: 50 },
+        expert: { list: expertWords, prize: 100 }
+    };
+
+    const selectedDifficulty = difficulties[difficulty];
+    const wordList = selectedDifficulty.list;
+    const prize = selectedDifficulty.prize;
+
+    const word = wordList[Math.floor(Math.random() * wordList.length)];
+    await kv.set(gameKey, { english: word.english, japanese: word.japanese, prize: prize, difficulty: difficulty }, { ex: 300 });
+
+    const question = `[${difficulty}] この日本語を英訳せよ：\n\n「${word.japanese}」`;
+    const fullMessage = precedingMessage ? `${precedingMessage}\n\n${question}` : question;
+
+    await replyToLine(replyToken, fullMessage);
 }
 
 // LINEへの返信を行う共通関数
