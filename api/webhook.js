@@ -765,13 +765,14 @@ export default async function handler(req, res) {
       if (!leaderboardData || leaderboardData.length === 0) {
         leaderboardMessage += "まだランキングに誰もいません。\n";
       } else {
-        leaderboardData.forEach((entry, index) => {
-          const uid = entry.member;
-          const points = entry.score;
+        // kv.zrevrange with { withScores: true } returns a flat array: [member, score, member, score, ...]
+        for (let i = 0; i < leaderboardData.length; i += 2) {
+          const uid = leaderboardData[i];
+          const points = leaderboardData[i + 1];
           // ユーザーIDをマスクする処理はそのまま
           const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...` : uid.toString();
-          leaderboardMessage += `${index + 1}. ${maskedUserId} : ${points}p\n`;
-        });
+          leaderboardMessage += `${(i / 2) + 1}. ${maskedUserId} : ${points}p\n`;
+        }
       }
 
       console.log("[LEADERBOARD] Attempting to send message:", leaderboardMessage.substring(0, 200)); // Log first 200 chars
