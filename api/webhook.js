@@ -7,6 +7,7 @@ const PREFIX_USER_STOCKS = 'stocks:';
 const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレフィックス
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
 const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
+const PREFIX_USER_NAME = 'username:'; // ユーザー名を保存するキーのプレフィックス
 
 // 英単語リスト
 const easyWords = [
@@ -753,6 +754,25 @@ export default async function handler(req, res) {
   }
 
 
+  if (userText.startsWith("!register ")) {
+    const username = userText.substring(10).trim(); // `!register ` は10文字
+    const usernameKey = `${PREFIX_USER_NAME}${userId}`;
+
+    // ユーザー名のバリデーション
+    if (username.length < 2 || username.length > 15) {
+      await replyToLine(replyToken, "ユーザー名は2文字以上15文字以下で入力してください。");
+      return res.status(200).end();
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      await replyToLine(replyToken, "ユーザー名には、英数字とアンダースコア(_)のみ使用できます。");
+      return res.status(200).end();
+    }
+
+    await kv.set(usernameKey, username);
+    await replyToLine(replyToken, `ユーザー名を「${username}」に設定しました。`);
+    return res.status(200).end();
+  }
+
   if (userText === "!leaderboard") {
     console.log(`[LEADERBOARD] Request received from userId: ${userId}`);
     try {
@@ -765,13 +785,23 @@ export default async function handler(req, res) {
       if (!leaderboardData || leaderboardData.length === 0) {
         leaderboardMessage += "まだランキングに誰もいません。\n";
       } else {
-        // kv.zrevrange with { withScores: true } returns a flat array: [member, score, member, score, ...]
+        const userIds = [];
+        for (let i = 0; i < leaderboardData.length; i += 2) {
+          userIds.push(leaderboardData[i]);
+        }
+
+        const usernameKeys = userIds.map(uid => `${PREFIX_USER_NAME}${uid}`);
+        const usernames = usernameKeys.length > 0 ? await kv.mget(...usernameKeys) : [];
+
+        // kv.zrevrange with { withScores: true } はフラットな配列を返す: [member, score, member, score, ...]
         for (let i = 0; i < leaderboardData.length; i += 2) {
           const uid = leaderboardData[i];
           const points = leaderboardData[i + 1];
-          // ユーザーIDをマスクする処理はそのまま
-          const maskedUserId = uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...` : uid.toString();
-          leaderboardMessage += `${(i / 2) + 1}. ${maskedUserId} : ${points}p\n`;
+          const username = usernames[i / 2];
+
+          const displayName = username ? username : (uid.toString().length > 7 ? `${uid.toString().substring(0, 4)}...` : uid.toString());
+
+          leaderboardMessage += `${(i / 2) + 1}. ${displayName} : ${points}p\n`;
         }
       }
 
