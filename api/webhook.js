@@ -12,6 +12,26 @@ const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレ�
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
 const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
 
+const TITLES = {
+    PREDATOR: "プレデター",
+    MASTER: "マスター",
+    DIAMOND: "ダイヤ",
+    PLATINUM: "プラチナ",
+    GOLD: "ゴールド",
+    SILVER: "シルバー",
+    BRONZE: "ブロンズ",
+    NO_TITLE: "石ころ"
+};
+
+const TITLE_THRESHOLDS = {
+    [TITLES.MASTER]: 100000000,
+    [TITLES.DIAMOND]: 10000000,
+    [TITLES.PLATINUM]: 1000000,
+    [TITLES.GOLD]: 100000,
+    [TITLES.SILVER]: 10000,
+    [TITLES.BRONZE]: 1000,
+};
+
 // 英単語リスト
 const easyWords = [
     { english: ["apple"], japanese: "りんご" }, { english: ["book"], japanese: "本" },
@@ -438,8 +458,14 @@ export default async function handler(req, res) {
     let replyMessage;
     if (isCorrect) {
       const prize = gameData.prize;
+      const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
       const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      replyMessage = `正解！ ${prize}ポイント獲得！ (現在: ${newPoints}ポイント)`;
+      replyMessage = `正解！ ${prize}YP獲得！ (現在: ${newPoints}YP)`;
+
+      const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
+      if (promotionMessage) {
+          replyMessage += `\n\n${promotionMessage}`;
+      }
     } else {
       // 不正解の場合、正解の単語（配列の場合は最初の単語）を提示
       const correctAnswer = Array.isArray(gameData.english) ? gameData.english[0] : gameData.english;
@@ -473,13 +499,21 @@ export default async function handler(req, res) {
   // ポイントシステムのコマンド処理
   if (userText === "!point") {
     const currentPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
-    await replyToLine(replyToken, `現在のポイント: ${currentPoints} ポイント`);
+    await replyToLine(replyToken, `現在のYP: ${currentPoints} YP`);
     return res.status(200).end();
   }
 
   if (userText === "!work") {
+    const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
     const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
-    await replyToLine(replyToken, `50ポイント獲得しました。 (現在: ${newPoints} ポイント)`, {
+    let replyMessage = `50YP獲得しました。 (現在: ${newPoints} YP)`;
+
+    const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
+    if (promotionMessage) {
+        replyMessage += `\n\n${promotionMessage}`;
+    }
+
+    await replyToLine(replyToken, replyMessage, {
       items: [
         {
           type: "action",
@@ -527,8 +561,14 @@ export default async function handler(req, res) {
     ) {
       // ユーザーの勝利、ポイント獲得
       const prize = 20;
+      const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
       const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      resultMessage = `汝の勝ちだ。${prize}ポイントくれてやろう。\n(現在: ${newPoints}p)`;
+      resultMessage = `汝の勝ちだ。${prize}YPくれてやろう。\n(現在: ${newPoints}YP)`;
+
+      const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
+      if (promotionMessage) {
+          resultMessage += `\n\n${promotionMessage}`;
+      }
     } else {
       resultMessage = "我が勝ちだ。";
     }
@@ -549,7 +589,7 @@ export default async function handler(req, res) {
     let currentPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
 
     if (currentPoints < cost) {
-      await replyToLine(replyToken, `スロットには${cost}ポイント必要です。 (現在: ${currentPoints}ポイント)`);
+      await replyToLine(replyToken, `スロットには${cost}YP必要です。 (現在: ${currentPoints}YP)`);
       return res.status(200).end();
     }
 
@@ -565,20 +605,25 @@ export default async function handler(req, res) {
 
     if (reel1 === "😈" && reel2 === "😈" && reel3 === "😈") {
       prize = 1500;
-      message += `大当たり！ ${prize} ポイント獲得！`;
+      message += `大当たり！ ${prize} YP獲得！`;
     } else if (reel1 === reel2 && reel2 === reel3) {
       prize = 500;
-      message += `当たり！ ${prize} ポイント獲得！`;
+      message += `当たり！ ${prize} YP獲得！`;
     } else {
       message += "残念、ハズレです。";
     }
 
     let finalPoints = currentPoints;
     if (prize > 0) {
-      finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+        const oldPoints = finalPoints; // This is the point count after deduction but before winning
+        finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+        const promotionMessage = await checkPromotion(userId, oldPoints, finalPoints);
+        if (promotionMessage) {
+            message += `\n\n${promotionMessage}`;
+        }
     }
 
-    message += ` (現在: ${finalPoints}ポイント)`;
+    message += ` (現在: ${finalPoints}YP)`;
     await replyToLine(replyToken, message, {
       items: [
         {
@@ -660,7 +705,7 @@ export default async function handler(req, res) {
 
   // Info: AI
   if (userText === "!others_ai_info") {
-    await replyToLine(replyToken, "我と話すには「!ai <メッセージ>」と入力するのだ。\n(神託には500pが必要となる)", {
+    await replyToLine(replyToken, "我と話すには「!ai <メッセージ>」と入力するのだ。\n(神託には500YPが必要となる)", {
       items: [
         { type: "action", action: { type: "message", label: "戻る", text: "!others" } },
       ]
@@ -705,9 +750,16 @@ export default async function handler(req, res) {
   }
 
 
+  if (userText === "!title") {
+      const userPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
+      const userTitle = await getCurrentTitle(userId, userPoints);
+      await replyToLine(replyToken, `汝の現在の称号は [${userTitle}] じゃ。`);
+      return res.status(200).end();
+  }
+
   if (userText === "!leaderboard") {
     const leaderboardData = await redis.zrevrange(KEY_LEADERBOARD_POINTS, 0, 9, 'WITHSCORES');
-    let leaderboardMessage = "ポイントランキング\n";
+    let leaderboardMessage = "YPランキング\n";
 
     if (leaderboardData.length === 0) {
       leaderboardMessage += "まだランキングに誰もいません。\n";
@@ -719,13 +771,20 @@ export default async function handler(req, res) {
 
       const usernameKeys = userIds.map(uid => `${PREFIX_USER_NAME}${uid}`);
       const usernames = usernameKeys.length > 0 ? await redis.mget(usernameKeys) : [];
+      const top3 = await redis.zrevrange(KEY_LEADERBOARD_POINTS, 0, 2);
 
       for (let i = 0; i < leaderboardData.length; i += 2) {
         const memberId = leaderboardData[i];
         const score = leaderboardData[i + 1];
         const username = usernames[i / 2];
         const displayName = username || `...${memberId.slice(-4)}`;
-        leaderboardMessage += `${(i / 2) + 1}. ${displayName} : ${score}p\n`;
+
+        let title = getTitleForPoints(score);
+        if (title === TITLES.MASTER && top3.includes(memberId)) {
+            title = `✨${TITLES.PREDATOR}✨`;
+        }
+
+        leaderboardMessage += `${(i / 2) + 1}. [${title}] ${displayName} : ${score}YP\n`;
       }
     }
     await replyToLine(replyToken, leaderboardMessage);
@@ -734,11 +793,12 @@ export default async function handler(req, res) {
 
   if (userText === "!help") {
     const helpMessage = `
+ヤハウェポイントを沢山ためて、億万長者になり、景品をゲットするのじゃ
 --- コマンド一覧 ---
-!point - ポイント確認
-!work - 働く (50p)
+!point - YP確認
+!work - 働く (50YP)
 !janken - じゃんけん
-!slot - スロット (10p)
+!slot - スロット (10YP)
 !gacha low/mid/high [回数] - ガチャ
 !omikuji - おみくじ
 !eng - 英単語ゲーム
@@ -746,7 +806,7 @@ export default async function handler(req, res) {
 !register [名前] - 名前登録
 !reset - データリセット
 !items - 所持品確認
-!ai [文] - AIと話す (500p)
+!ai [文] - AIと話す (500YP)
 
 --- 経済コマンド (!economy) ---
 !tradesee - 株価確認
@@ -854,9 +914,9 @@ export default async function handler(req, res) {
   if (userText === "!economy_gacha") {
     await replyToLine(replyToken, "どの祭壇に祈りを捧げる？", {
         items: [
-            { type: "action", action: { type: "message", label: "低級ガチャ(100p)", text: "!gacha low" } },
-            { type: "action", action: { type: "message", label: "中級ガチャ(500p)", text: "!gacha mid" } },
-            { type: "action", action: { type: "message", label: "高級ガチャ(5000p)", text: "!gacha high" } },
+            { type: "action", action: { type: "message", label: "低級ガチャ(100YP)", text: "!gacha low" } },
+            { type: "action", action: { type: "message", label: "中級ガチャ(500YP)", text: "!gacha mid" } },
+            { type: "action", action: { type: "message", label: "高級ガチャ(5000YP)", text: "!gacha high" } },
             { type: "action", action: { type: "message", label: "戻る", text: "!economy_play" } },
         ]
     });
@@ -952,7 +1012,7 @@ export default async function handler(req, res) {
       currentStockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
       const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
       const userStockCount = parseInt(await redis.get(userStockKey)) || 0;
-      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}p\n保有株数: ${userStockCount}株`, {
+      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}YP\n保有株数: ${userStockCount}株`, {
         items: [
           { type: "action", action: { type: "message", label: "戻る", text: "!economy_invest" } }
         ]
@@ -979,12 +1039,12 @@ export default async function handler(req, res) {
         if (command === "!tradebuy") {
           const cost = currentStockPrice * amount;
           if (userCurrentPoints < cost) {
-            await replyToLine(replyToken, `ポイントが不足しています。(${amount}株: ${cost}p, 保有: ${userCurrentPoints}p)`);
+            await replyToLine(replyToken, `YPが不足しています。(${amount}株: ${cost}YP, 保有: ${userCurrentPoints}YP)`);
             return res.status(200).end();
           }
           userCurrentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
           userStockCount = await redis.incrby(userStockKey, amount);
-          await replyToLine(replyToken, `${amount}株を${cost}pで購入しました。\n保有株数: ${userStockCount}株\n残ポイント: ${userCurrentPoints}p`);
+          await replyToLine(replyToken, `${amount}株を${cost}YPで購入しました。\n保有株数: ${userStockCount}株\n残YP: ${userCurrentPoints}YP`);
           return res.status(200).end();
         }
 
@@ -995,8 +1055,15 @@ export default async function handler(req, res) {
           }
           const earnings = currentStockPrice * amount;
           userStockCount = await redis.decrby(userStockKey, amount);
+          const oldPoints = userCurrentPoints;
           userCurrentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
-          await replyToLine(replyToken, `${amount}株を${earnings}pで売却しました。\n保有株数: ${userStockCount}株\n残ポイント: ${userCurrentPoints}p`);
+
+          let replyMessage = `${amount}株を${earnings}YPで売却しました。\n保有株数: ${userStockCount}株\n残YP: ${userCurrentPoints}YP`;
+          const promotionMessage = await checkPromotion(userId, oldPoints, userCurrentPoints);
+          if (promotionMessage) {
+              replyMessage += `\n\n${promotionMessage}`;
+          }
+          await replyToLine(replyToken, replyMessage);
           return res.status(200).end();
         }
       } else {
@@ -1030,7 +1097,7 @@ export default async function handler(req, res) {
 
     let currentPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
     if (currentPoints < betAmount) {
-      await replyToLine(replyToken, `ポイントが不足しています。(賭け金: ${betAmount}p, 保有: ${currentPoints}p)`);
+      await replyToLine(replyToken, `YPが不足しています。(賭け金: ${betAmount}YP, 保有: ${currentPoints}YP)`);
       return res.status(200).end();
     }
 
@@ -1041,10 +1108,16 @@ export default async function handler(req, res) {
 
     if (betNumber === diceRoll) {
       const prize = betAmount * 6;
+      const oldPoints = currentPoints;
       const finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      message += `的中！ ${prize}ポイント獲得！ (現在: ${finalPoints}p)`;
+      message += `的中！ ${prize}YP獲得！ (現在: ${finalPoints}YP)`;
+
+      const promotionMessage = await checkPromotion(userId, oldPoints, finalPoints);
+      if (promotionMessage) {
+          message += `\n\n${promotionMessage}`;
+      }
     } else {
-      message += `ハズレ。 (現在: ${currentPoints}p)`;
+      message += `ハズレ。 (現在: ${currentPoints}YP)`;
     }
 
     await replyToLine(replyToken, message);
@@ -1069,9 +1142,15 @@ export default async function handler(req, res) {
     const totalDebt = amount + interest;
 
     const currentDebt = await redis.incrby(debtKey, totalDebt);
+    const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
     const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, amount, userId);
 
-    await replyToLine(replyToken, `${amount}pを借りました(利子込${totalDebt}p)。\n現在の借金: ${currentDebt}p\n現在のポイント: ${newPoints}p`);
+    let replyMessage = `${amount}YPを借りました(利子込${totalDebt}YP)。\n現在の借金: ${currentDebt}YP\n現在のYP: ${newPoints}YP`;
+    const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
+    if (promotionMessage) {
+        replyMessage += `\n\n${promotionMessage}`;
+    }
+    await replyToLine(replyToken, replyMessage);
     return res.status(200).end();
   }
 
@@ -1097,7 +1176,7 @@ export default async function handler(req, res) {
 
     const currentUserPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
     if (currentUserPoints < amount) {
-      await replyToLine(replyToken, `ポイントが不足しています。(返済額: ${amount}p, 保有: ${currentUserPoints}p)`);
+      await replyToLine(replyToken, `YPが不足しています。(返済額: ${amount}YP, 保有: ${currentUserPoints}YP)`);
       return res.status(200).end();
     }
 
@@ -1107,9 +1186,9 @@ export default async function handler(req, res) {
 
     if (remainingDebt <= 0) {
       await redis.del(debtKey);
-      await replyToLine(replyToken, `${repayAmount}p返済し、借金がなくなりました。\n現在のポイント: ${newPoints}p`);
+      await replyToLine(replyToken, `${repayAmount}YP返済し、借金がなくなりました。\n現在のYP: ${newPoints}YP`);
     } else {
-      await replyToLine(replyToken, `${repayAmount}p返済しました。\n残りの借金: ${remainingDebt}p\n現在のポイント: ${newPoints}p`);
+      await replyToLine(replyToken, `${repayAmount}YP返済しました。\n残りの借金: ${remainingDebt}YP\n現在のYP: ${newPoints}YP`);
     }
     return res.status(200).end();
   }
@@ -1162,7 +1241,7 @@ export default async function handler(req, res) {
     let currentPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
 
     if (currentPoints < totalCost) {
-      await replyToLine(replyToken, `啓示：信仰が足りぬ... (必要: ${totalCost}p, 現在: ${currentPoints}p)`);
+      await replyToLine(replyToken, `啓示：信仰が足りぬ... (必要: ${totalCost}YP, 現在: ${currentPoints}YP)`);
       return res.status(200).end();
     }
 
@@ -1185,7 +1264,7 @@ export default async function handler(req, res) {
     }
 
     const resultMessage = results.map(item => `[${item.rarity}] ${item.name}`).join("\n");
-    const finalMessage = `---啓示---\n${resultMessage}\n----------\n残りの信仰: ${currentPoints}p`;
+    const finalMessage = `---啓示---\n${resultMessage}\n----------\n残りの信仰: ${currentPoints}YP`;
     await replyToLine(replyToken, finalMessage);
     return res.status(200).end();
   }
@@ -1214,7 +1293,7 @@ export default async function handler(req, res) {
     const currentPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
 
     if (currentPoints < cost) {
-      await replyToLine(replyToken, `神託には${cost}ポイントの信仰が必要だ。\n(現在: ${currentPoints}p)`);
+      await replyToLine(replyToken, `神託には${cost}YPの信仰が必要だ。\n(現在: ${currentPoints}YP)`);
       return res.status(200).end();
     }
 
@@ -1260,7 +1339,7 @@ export default async function handler(req, res) {
       console.error("Error fetching from DeepSeek API:", error);
       aiReply = "深淵からの声が、予期せぬ沈黙に閉ざされた…";
     }
-    await replyToLine(replyToken, `(500pを消費した)\n${aiReply}`, {
+    await replyToLine(replyToken, `(500YPを消費した)\n${aiReply}`, {
         items: [
             { type: "action", action: { type: "message", label: "戻る", text: "!others" } }
         ]
@@ -1276,6 +1355,45 @@ export default async function handler(req, res) {
   }
 
   res.status(200).end();
+}
+
+// --- Title System Helper Functions ---
+
+function getTitleForPoints(points) {
+    if (points >= TITLE_THRESHOLDS[TITLES.MASTER]) return TITLES.MASTER;
+    if (points >= TITLE_THRESHOLDS[TITLES.DIAMOND]) return TITLES.DIAMOND;
+    if (points >= TITLE_THRESHOLDS[TITLES.PLATINUM]) return TITLES.PLATINUM;
+    if (points >= TITLE_THRESHOLDS[TITLES.GOLD]) return TITLES.GOLD;
+    if (points >= TITLE_THRESHOLDS[TITLES.SILVER]) return TITLES.SILVER;
+    if (points >= TITLE_THRESHOLDS[TITLES.BRONZE]) return TITLES.BRONZE;
+    return TITLES.NO_TITLE;
+}
+
+async function checkPromotion(userId, oldPoints, newPoints) {
+    const oldTitle = getTitleForPoints(oldPoints);
+    const newTitle = getTitleForPoints(newPoints);
+
+    if (oldTitle !== newTitle) {
+        if (newTitle === TITLES.MASTER) {
+            const top3 = await redis.zrevrange(KEY_LEADERBOARD_POINTS, 0, 2);
+            if (top3.includes(userId)) {
+                return `🎉🎉🎉 TITLE UP! 🎉🎉🎉\nおめでとう！汝は神の領域、[${TITLES.PREDATOR}]に到達した！`;
+            }
+        }
+        return `🎉 TITLE UP! 🎉\nおめでとう！称号が [${newTitle}] に上がったぞ！`;
+    }
+    return null;
+}
+
+async function getCurrentTitle(userId, points) {
+    let title = getTitleForPoints(points);
+    if (title === TITLES.MASTER) {
+        const top3 = await redis.zrevrange(KEY_LEADERBOARD_POINTS, 0, 2);
+        if (top3.includes(userId)) {
+            title = TITLES.PREDATOR;
+        }
+    }
+    return title;
 }
 
 // 英単語ゲームを開始する共通関数
