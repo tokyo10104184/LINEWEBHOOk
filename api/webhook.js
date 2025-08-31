@@ -13,22 +13,22 @@ const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を�
 const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
 
 const TITLES = {
-    PREDATOR: "プレデター",
-    MASTER: "マスター",
-    DIAMOND: "ダイヤ",
-    PLATINUM: "プラチナ",
-    GOLD: "ゴールド",
-    SILVER: "シルバー",
-    BRONZE: "ブロンズ",
+    PREDATOR: "ヤハウェ・プレデター",
+    MASTER: "ヤハウェ・マスター",
+    DIAMOND: "ヤハウェ・ダイヤ",
+    PLATINUM: "ヤハウェ・プラチナ",
+    GOLD: "ヤハウェ・ゴールド",
+    SILVER: "ヤハウェ・シルバー",
+    BRONZE: "ヤハウェ・ブロンズ",
     NO_TITLE: "石ころ"
 };
 
 const TITLE_THRESHOLDS = {
-    [TITLES.MASTER]: 100000000,
-    [TITLES.DIAMOND]: 10000000,
-    [TITLES.PLATINUM]: 1000000,
-    [TITLES.GOLD]: 100000,
-    [TITLES.SILVER]: 10000,
+    [TITLES.MASTER]: 100000,
+    [TITLES.DIAMOND]: 50000,
+    [TITLES.PLATINUM]: 25000,
+    [TITLES.GOLD]: 10000,
+    [TITLES.SILVER]: 5000,
     [TITLES.BRONZE]: 1000,
 };
 
