@@ -586,14 +586,16 @@ export default async function handler(req, res) {
 
   if (userText === "!slot") {
     const cost = 10;
-    let currentPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
+    const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
 
-    if (currentPoints < cost) {
-      await replyToLine(replyToken, `スロットには${cost}YP必要です。 (現在: ${currentPoints}YP)`);
+    if (oldPoints < cost) {
+      await replyToLine(replyToken, `スロットには${cost}YP必要です。 (現在: ${oldPoints}YP)`);
       return res.status(200).end();
     }
 
-    currentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+    // Deduct cost
+    await redis.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+    const pointsAfterCost = oldPoints - cost;
 
     const reels = ["🍎", "🍊", "🍇", "😈"];
     const reel1 = reels[Math.floor(Math.random() * reels.length)];
@@ -613,11 +615,10 @@ export default async function handler(req, res) {
       message += "残念、ハズレです。";
     }
 
-    let finalPoints = currentPoints;
+    let finalPoints = pointsAfterCost;
     if (prize > 0) {
-        const oldPoints = finalPoints; // This is the point count after deduction but before winning
         finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-        const promotionMessage = await checkPromotion(userId, oldPoints, finalPoints);
+        const promotionMessage = await checkPromotion(userId, pointsAfterCost, finalPoints);
         if (promotionMessage) {
             message += `\n\n${promotionMessage}`;
         }
@@ -781,10 +782,15 @@ export default async function handler(req, res) {
 
         let title = getTitleForPoints(score);
         if (title === TITLES.MASTER && top3.includes(memberId)) {
-            title = `✨${TITLES.PREDATOR}✨`;
+            title = TITLES.PREDATOR;
         }
 
-        leaderboardMessage += `${(i / 2) + 1}. [${title}] ${displayName} : ${score}YP\n`;
+        let displayTitle = title.replace("ヤハウェ・", "");
+        if (title === TITLES.PREDATOR) {
+            displayTitle = `✨${displayTitle}✨`;
+        }
+
+        leaderboardMessage += `${(i / 2) + 1}. [${displayTitle}] ${displayName} : ${score}YP\n`;
       }
     }
     await replyToLine(replyToken, leaderboardMessage);
@@ -1095,29 +1101,30 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
-    let currentPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
-    if (currentPoints < betAmount) {
-      await replyToLine(replyToken, `YPが不足しています。(賭け金: ${betAmount}YP, 保有: ${currentPoints}YP)`);
+    const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
+    if (oldPoints < betAmount) {
+      await replyToLine(replyToken, `YPが不足しています。(賭け金: ${betAmount}YP, 保有: ${oldPoints}YP)`);
       return res.status(200).end();
     }
 
-    currentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -betAmount, userId);
+    // Deduct bet amount
+    await redis.zincrby(KEY_LEADERBOARD_POINTS, -betAmount, userId);
+    const pointsAfterBet = oldPoints - betAmount;
 
     const diceRoll = Math.floor(Math.random() * 6) + 1;
     let message = `サイコロの目: 「${diceRoll}」！\n`;
 
     if (betNumber === diceRoll) {
       const prize = betAmount * 6;
-      const oldPoints = currentPoints;
       const finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
       message += `的中！ ${prize}YP獲得！ (現在: ${finalPoints}YP)`;
 
-      const promotionMessage = await checkPromotion(userId, oldPoints, finalPoints);
+      const promotionMessage = await checkPromotion(userId, pointsAfterBet, finalPoints);
       if (promotionMessage) {
           message += `\n\n${promotionMessage}`;
       }
     } else {
-      message += `ハズレ。 (現在: ${currentPoints}YP)`;
+      message += `ハズレ。 (現在: ${pointsAfterBet}YP)`;
     }
 
     await replyToLine(replyToken, message);
