@@ -791,6 +791,49 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (userText === "!leaderboard_invest") {
+    let cursor = '0';
+    const userStocks = [];
+
+    do {
+      const [newCursor, keys] = await redis.scan(cursor, 'MATCH', `${PREFIX_USER_STOCKS}*`, 'COUNT', 100);
+      cursor = newCursor;
+
+      if (keys.length > 0) {
+        const stockCounts = await redis.mget(keys);
+        const userIds = keys.map(key => key.substring(PREFIX_USER_STOCKS.length));
+        const usernameKeys = userIds.map(uid => `${PREFIX_USER_NAME}${uid}`);
+        const usernames = usernameKeys.length > 0 ? await redis.mget(usernameKeys) : [];
+
+        for (let i = 0; i < userIds.length; i++) {
+          const stockCount = parseInt(stockCounts[i], 10);
+          if (stockCount > 0) {
+            userStocks.push({
+              userId: userIds[i],
+              username: usernames[i] || `...${userIds[i].slice(-4)}`,
+              stocks: stockCount
+            });
+          }
+        }
+      }
+    } while (cursor !== '0');
+
+    userStocks.sort((a, b) => b.stocks - a.stocks);
+
+    let leaderboardMessage = "保有株数ランキング\n";
+    if (userStocks.length === 0) {
+      leaderboardMessage += "まだ誰も株を保有していません。\n";
+    } else {
+      const top10 = userStocks.slice(0, 10);
+      for (let i = 0; i < top10.length; i++) {
+        const user = top10[i];
+        leaderboardMessage += `${i + 1}. ${user.username} : ${user.stocks}株\n`;
+      }
+    }
+    await replyToLine(replyToken, leaderboardMessage);
+    return res.status(200).end();
+  }
+
   if (userText === "!help") {
     const helpMessage = `
 ヤハウェポイントを沢山ためて、億万長者になり、景品をゲットするのじゃ
@@ -936,6 +979,7 @@ export default async function handler(req, res) {
         { type: "action", action: { type: "message", label: "株価を見る", text: "!tradesee" } },
         { type: "action", action: { type: "message", label: "株を買う", text: "!economy_buy_info" } },
         { type: "action", action: { type: "message", label: "株を売る", text: "!economy_sell_info" } },
+        { type: "action", action: { type: "message", label: "ランキング(保有株数)", text: "!leaderboard_invest" } },
         { type: "action", action: { type: "message", label: "戻る", text: "!economy" } },
       ]
     });
