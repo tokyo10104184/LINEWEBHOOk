@@ -12,6 +12,27 @@ const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレ�
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
 const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
 
+// --- 株価イベント関連の定数 ---
+const KEY_STOCK_EVENT = 'stock_event'; // 株価イベントの詳細を保存するハッシュキー
+const EVENT_CHANCE = 0.05; // 各リクエストでイベントが発生する確率 (5%)
+const EVENT_DURATION_MINUTES = 5; // イベント期間（分）
+
+const boomReasons = [
+    "画期的な新技術が発見された！",
+    "近隣諸国との間に友好条約が結ばれた！",
+    "唯一神ヤハウェからの祝福があった！",
+    "伝説の投資家が市場に参入した！",
+    "豊穣の女神が微笑んでいる！"
+];
+
+const bustReasons = [
+    "大規模なシステム障害が発生した…",
+    "未知のウイルスが流行の兆しを見せている…",
+    "唯一神ヤハウェの気まぐれが発動した…",
+    "大口投資家が一斉に資金を引き揚げた…",
+    "空から不吉な流れ星が観測された…"
+];
+
 const TITLES = {
     PREDATOR: "ヤハウェ・プレデター",
     MASTER: "ヤハウェ・マスター",
@@ -488,12 +509,9 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // --- 株価のランダム変動 ---
-  // 約10%の確率で株価を変動させる
-  if (Math.random() < 0.1) {
-    // この関数はバックグラウンドで実行され、完了を待たない（応答速度を優先）
-    fluctuateStockPrice().catch(console.error);
-  }
+  // --- 株価イベント管理 ---
+  // バックグラウンドでイベントの開始/終了/通常変動を管理
+  manageStockMarket().catch(console.error);
   // -------------------------
 
   // ポイントシステムのコマンド処理
@@ -1038,13 +1056,57 @@ export default async function handler(req, res) {
   }
   // -------------------------
 
-  // 株価を少し変動させる非同期関数
-  async function fluctuateStockPrice() {
-    let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
-    const changePercent = (Math.random() - 0.5) * 0.1; // -5% to +5%
-    stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
-    await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
-    return stockPrice;
+  // 株価イベントと価格変動を管理する統合関数
+  async function manageStockMarket() {
+    const now = Date.now();
+    let event = await redis.hgetall(KEY_STOCK_EVENT);
+
+    // 1. イベントが終了しているか確認
+    if (event && event.expiresAt && now >= parseInt(event.expiresAt, 10)) {
+        const basePrice = parseInt(event.basePrice, 10);
+        // 基準価格に少しのランダム性を加えて戻す
+        const finalPrice = Math.max(10, Math.round(basePrice * (1 + (Math.random() - 0.5) * 0.1)));
+        await redis.set(KEY_CURRENT_STOCK_PRICE, finalPrice);
+        await redis.del(KEY_STOCK_EVENT);
+        event = null; // イベント情報をクリア
+    }
+
+    // 2. イベント中でなければ、確率で新規イベントを開始
+    if (!event || !event.type) {
+        if (Math.random() < EVENT_CHANCE) {
+            const currentPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+            const type = Math.random() < 0.5 ? 'boom' : 'bust';
+            const reason = type === 'boom'
+                ? boomReasons[Math.floor(Math.random() * boomReasons.length)]
+                : bustReasons[Math.floor(Math.random() * bustReasons.length)];
+
+            const newEvent = {
+                type,
+                reason,
+                basePrice: currentPrice.toString(),
+                startedAt: now.toString(),
+                expiresAt: (now + EVENT_DURATION_MINUTES * 60 * 1000).toString(),
+            };
+            await redis.hmset(KEY_STOCK_EVENT, newEvent);
+            event = newEvent; // このリクエストから新イベントを適用
+        } else {
+            // 3. イベントがない場合は、通常の微小な価格変動
+            let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+            const changePercent = (Math.random() - 0.5) * 0.02; // 通常変動は±1%に抑制
+            stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
+            await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
+            return; // 通常変動後は処理終了
+        }
+    }
+
+    // 4. イベントが有効な場合（既存または新規）、価格を大きく変動させる
+    if (event && event.type) {
+        let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+        // 急騰時は+10%〜+30%、急落時は-10%〜-30%の範囲で変動
+        const changePercent = event.type === 'boom' ? (0.1 + Math.random() * 0.2) : (-0.1 - Math.random() * 0.2);
+        stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
+        await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
+    }
   }
 
   if (userText.startsWith("!trade")) {
@@ -1053,10 +1115,17 @@ export default async function handler(req, res) {
     const command = parts[0];
 
     if (command === "!tradesee") {
+      const event = await redis.hgetall(KEY_STOCK_EVENT);
+      let eventMessage = "";
+      if (event && event.type) {
+          const status = event.type === 'boom' ? '📈 急騰中！' : '📉 急落中！';
+          eventMessage = `\n\n--- 緊急速報 ---\n${status}\n理由: ${event.reason}`;
+      }
+
       currentStockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
       const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
       const userStockCount = parseInt(await redis.get(userStockKey)) || 0;
-      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}YP\n保有株数: ${userStockCount}株`, {
+      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}YP\n保有株数: ${userStockCount}株${eventMessage}`, {
         items: [
           { type: "action", action: { type: "message", label: "戻る", text: "!economy_invest" } }
         ]
@@ -1074,7 +1143,7 @@ export default async function handler(req, res) {
           return res.status(200).end();
         }
 
-        currentStockPrice = await fluctuateStockPrice();
+        currentStockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
 
         const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
         let userStockCount = parseInt(await redis.get(userStockKey)) || 0;
