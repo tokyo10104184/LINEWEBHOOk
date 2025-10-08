@@ -12,6 +12,61 @@ const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレ�
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
 const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
 
+// --- 株価イベント関連の定数 ---
+const KEY_STOCK_EVENT = 'stock_event'; // 株価イベントの詳細を保存するハッシュキー
+const EVENT_CHANCE = 0.05; // 各リクエストでイベントが発生する確率 (5%)
+const EVENT_DURATION_MINUTES = 5; // イベント期間（分）
+
+const boomReasons = [
+    "画期的な新技術が発見された！",
+    "近隣諸国との間に友好条約が結ばれた！",
+    "唯一神ヤハウェからの祝福があった！",
+    "伝説の投資家が市場に参入した！",
+    "豊穣の女神が微笑んでいる！"
+];
+
+const bustReasons = [
+    "大規模なシステム障害が発生した…",
+    "未知のウイルスが流行の兆しを見せている…",
+    "唯一神ヤハウェの気まぐれが発動した…",
+    "大口投資家が一斉に資金を引き揚げた…",
+    "空から不吉な流れ星が観測された…"
+];
+
+// --- ミッション＆実績関連の定数 ---
+const PREFIX_MISSION_PROGRESS = 'mission_progress:'; // デイリーミッションの進捗
+const PREFIX_USER_ACHIEVEMENTS = 'achievements:'; // ユーザーが達成した実績
+const PREFIX_USER_TOTALS = 'totals:'; // 累計値などを記録
+
+const DAILY_MISSIONS = {
+    WORK_3: {
+        id: 'WORK_3',
+        description: '労働を3回行う',
+        target: 3,
+        reward: 100,
+        progressKey: 'work_count',
+    },
+    JANKEN_WIN_5: {
+        id: 'JANKEN_WIN_5',
+        description: 'じゃんけんで5回勝利する',
+        target: 5,
+        reward: 150,
+        progressKey: 'janken_win_count',
+    },
+};
+
+const ACHIEVEMENTS = {
+    TOTAL_YP_100K: {
+        id: 'TOTAL_YP_100K',
+        description: '累計獲得YPが10万を超える',
+        target: 100000,
+        reward: 5000,
+        progressKey: 'total_yp_earned',
+        title: '成金',
+    },
+};
+
+
 const TITLES = {
     PREDATOR: "ヤハウェ・プレデター",
     MASTER: "ヤハウェ・マスター",
@@ -458,13 +513,11 @@ export default async function handler(req, res) {
     let replyMessage;
     if (isCorrect) {
       const prize = gameData.prize;
-      const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
-      const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+      const { newPoints, notifications } = await addPoints(userId, prize, "english_game_win");
       replyMessage = `正解！ ${prize}YP獲得！ (現在: ${newPoints}YP)`;
 
-      const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
-      if (promotionMessage) {
-          replyMessage += `\n\n${promotionMessage}`;
+      if (notifications.length > 0) {
+          replyMessage += "\n\n" + notifications.join("\n\n");
       }
     } else {
       // 不正解の場合、正解の単語（配列の場合は最初の単語）を提示
@@ -488,12 +541,9 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // --- 株価のランダム変動 ---
-  // 約10%の確率で株価を変動させる
-  if (Math.random() < 0.1) {
-    // この関数はバックグラウンドで実行され、完了を待たない（応答速度を優先）
-    fluctuateStockPrice().catch(console.error);
-  }
+  // --- 株価イベント管理 ---
+  // バックグラウンドでイベントの開始/終了/通常変動を管理
+  manageStockMarket().catch(console.error);
   // -------------------------
 
   // ポイントシステムのコマンド処理
@@ -504,13 +554,14 @@ export default async function handler(req, res) {
   }
 
   if (userText === "!work") {
-    const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
-    const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, 50, userId);
+    const { newPoints, notifications } = await addPoints(userId, 50, "work");
+    const progressNotifications = await updateProgress(userId, 'work_count');
+
     let replyMessage = `50YP獲得しました。 (現在: ${newPoints} YP)`;
 
-    const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
-    if (promotionMessage) {
-        replyMessage += `\n\n${promotionMessage}`;
+    const allNotifications = [...notifications, ...progressNotifications];
+    if (allNotifications.length > 0) {
+        replyMessage += "\n\n" + allNotifications.join("\n\n");
     }
 
     await replyToLine(replyToken, replyMessage, {
@@ -561,13 +612,14 @@ export default async function handler(req, res) {
     ) {
       // ユーザーの勝利、ポイント獲得
       const prize = 20;
-      const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
-      const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
+      const { newPoints, notifications } = await addPoints(userId, prize, "janken_win");
+      const progressNotifications = await updateProgress(userId, 'janken_win_count');
+
       resultMessage = `汝の勝ちだ。${prize}YPくれてやろう。\n(現在: ${newPoints}YP)`;
 
-      const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
-      if (promotionMessage) {
-          resultMessage += `\n\n${promotionMessage}`;
+      const allNotifications = [...notifications, ...progressNotifications];
+      if (allNotifications.length > 0) {
+          resultMessage += "\n\n" + allNotifications.join("\n\n");
       }
     } else {
       resultMessage = "我が勝ちだ。";
@@ -593,7 +645,8 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
-    currentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+    // addPointsを使用してコストを引く
+    const { newPoints: pointsAfterCost, notifications: costNotifications } = await addPoints(userId, -cost, "slot_cost");
 
     const reels = ["🍎", "🍊", "🍇", "😈"];
     const reel1 = reels[Math.floor(Math.random() * reels.length)];
@@ -613,14 +666,17 @@ export default async function handler(req, res) {
       message += "残念、ハズレです。";
     }
 
-    let finalPoints = currentPoints;
+    let finalPoints = pointsAfterCost;
+    const allNotifications = [...costNotifications];
+
     if (prize > 0) {
-        const oldPoints = finalPoints; // This is the point count after deduction but before winning
-        finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-        const promotionMessage = await checkPromotion(userId, oldPoints, finalPoints);
-        if (promotionMessage) {
-            message += `\n\n${promotionMessage}`;
-        }
+        const { newPoints: pointsAfterPrize, notifications: prizeNotifications } = await addPoints(userId, prize, "slot_win");
+        finalPoints = pointsAfterPrize;
+        allNotifications.push(...prizeNotifications);
+    }
+
+    if (allNotifications.length > 0) {
+        message += "\n\n" + allNotifications.join("\n\n");
     }
 
     message += ` (現在: ${finalPoints}YP)`;
@@ -1038,13 +1094,57 @@ export default async function handler(req, res) {
   }
   // -------------------------
 
-  // 株価を少し変動させる非同期関数
-  async function fluctuateStockPrice() {
-    let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
-    const changePercent = (Math.random() - 0.5) * 0.1; // -5% to +5%
-    stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
-    await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
-    return stockPrice;
+  // 株価イベントと価格変動を管理する統合関数
+  async function manageStockMarket() {
+    const now = Date.now();
+    let event = await redis.hgetall(KEY_STOCK_EVENT);
+
+    // 1. イベントが終了しているか確認
+    if (event && event.expiresAt && now >= parseInt(event.expiresAt, 10)) {
+        const basePrice = parseInt(event.basePrice, 10);
+        // 基準価格に少しのランダム性を加えて戻す
+        const finalPrice = Math.max(10, Math.round(basePrice * (1 + (Math.random() - 0.5) * 0.1)));
+        await redis.set(KEY_CURRENT_STOCK_PRICE, finalPrice);
+        await redis.del(KEY_STOCK_EVENT);
+        event = null; // イベント情報をクリア
+    }
+
+    // 2. イベント中でなければ、確率で新規イベントを開始
+    if (!event || !event.type) {
+        if (Math.random() < EVENT_CHANCE) {
+            const currentPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+            const type = Math.random() < 0.5 ? 'boom' : 'bust';
+            const reason = type === 'boom'
+                ? boomReasons[Math.floor(Math.random() * boomReasons.length)]
+                : bustReasons[Math.floor(Math.random() * bustReasons.length)];
+
+            const newEvent = {
+                type,
+                reason,
+                basePrice: currentPrice.toString(),
+                startedAt: now.toString(),
+                expiresAt: (now + EVENT_DURATION_MINUTES * 60 * 1000).toString(),
+            };
+            await redis.hmset(KEY_STOCK_EVENT, newEvent);
+            event = newEvent; // このリクエストから新イベントを適用
+        } else {
+            // 3. イベントがない場合は、通常の微小な価格変動
+            let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+            const changePercent = (Math.random() - 0.5) * 0.02; // 通常変動は±1%に抑制
+            stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
+            await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
+            return; // 通常変動後は処理終了
+        }
+    }
+
+    // 4. イベントが有効な場合（既存または新規）、価格を大きく変動させる
+    if (event && event.type) {
+        let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+        // 急騰時は+10%〜+30%、急落時は-10%〜-30%の範囲で変動
+        const changePercent = event.type === 'boom' ? (0.1 + Math.random() * 0.2) : (-0.1 - Math.random() * 0.2);
+        stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
+        await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
+    }
   }
 
   if (userText.startsWith("!trade")) {
@@ -1053,10 +1153,17 @@ export default async function handler(req, res) {
     const command = parts[0];
 
     if (command === "!tradesee") {
+      const event = await redis.hgetall(KEY_STOCK_EVENT);
+      let eventMessage = "";
+      if (event && event.type) {
+          const status = event.type === 'boom' ? '📈 急騰中！' : '📉 急落中！';
+          eventMessage = `\n\n--- 緊急速報 ---\n${status}\n理由: ${event.reason}`;
+      }
+
       currentStockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
       const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
       const userStockCount = parseInt(await redis.get(userStockKey)) || 0;
-      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}YP\n保有株数: ${userStockCount}株`, {
+      await replyToLine(replyToken, `現在の株価: ${currentStockPrice}YP\n保有株数: ${userStockCount}株${eventMessage}`, {
         items: [
           { type: "action", action: { type: "message", label: "戻る", text: "!economy_invest" } }
         ]
@@ -1074,7 +1181,7 @@ export default async function handler(req, res) {
           return res.status(200).end();
         }
 
-        currentStockPrice = await fluctuateStockPrice();
+        currentStockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
 
         const userStockKey = `${PREFIX_USER_STOCKS}${userId}`;
         let userStockCount = parseInt(await redis.get(userStockKey)) || 0;
@@ -1086,9 +1193,9 @@ export default async function handler(req, res) {
             await replyToLine(replyToken, `YPが不足しています。(${amount}株: ${cost}YP, 保有: ${userCurrentPoints}YP)`);
             return res.status(200).end();
           }
-          userCurrentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -cost, userId);
+          const { newPoints } = await addPoints(userId, -cost, "trade_buy");
           userStockCount = await redis.incrby(userStockKey, amount);
-          await replyToLine(replyToken, `${amount}株を${cost}YPで購入しました。\n保有株数: ${userStockCount}株\n残YP: ${userCurrentPoints}YP`);
+          await replyToLine(replyToken, `${amount}株を${cost}YPで購入しました。\n保有株数: ${userStockCount}株\n残YP: ${newPoints}YP`);
           return res.status(200).end();
         }
 
@@ -1099,13 +1206,12 @@ export default async function handler(req, res) {
           }
           const earnings = currentStockPrice * amount;
           userStockCount = await redis.decrby(userStockKey, amount);
-          const oldPoints = userCurrentPoints;
-          userCurrentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, earnings, userId);
 
-          let replyMessage = `${amount}株を${earnings}YPで売却しました。\n保有株数: ${userStockCount}株\n残YP: ${userCurrentPoints}YP`;
-          const promotionMessage = await checkPromotion(userId, oldPoints, userCurrentPoints);
-          if (promotionMessage) {
-              replyMessage += `\n\n${promotionMessage}`;
+          const { newPoints, notifications } = await addPoints(userId, earnings, "trade_sell");
+
+          let replyMessage = `${amount}株を${earnings}YPで売却しました。\n保有株数: ${userStockCount}株\n残YP: ${newPoints}YP`;
+          if (notifications.length > 0) {
+              replyMessage += "\n\n" + notifications.join("\n\n");
           }
           await replyToLine(replyToken, replyMessage);
           return res.status(200).end();
@@ -1145,23 +1251,30 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
-    currentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -betAmount, userId);
+    const { newPoints: pointsAfterBet, notifications: betNotifications } = await addPoints(userId, -betAmount, "diceroll_bet");
 
     const diceRoll = Math.floor(Math.random() * 6) + 1;
     let message = `サイコロの目: 「${diceRoll}」！\n`;
+    let finalPoints = pointsAfterBet;
+    let allNotifications = [...betNotifications];
 
     if (betNumber === diceRoll) {
-      const prize = betAmount * 6;
-      const oldPoints = currentPoints;
-      const finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
-      message += `的中！ ${prize}YP獲得！ (現在: ${finalPoints}YP)`;
-
-      const promotionMessage = await checkPromotion(userId, oldPoints, finalPoints);
-      if (promotionMessage) {
-          message += `\n\n${promotionMessage}`;
-      }
+      const prize = betAmount * 10;
+      const { newPoints: pointsAfterPrize, notifications: prizeNotifications } = await addPoints(userId, prize, "diceroll_win");
+      finalPoints = pointsAfterPrize;
+      allNotifications.push(...prizeNotifications);
+      message += `的中！ ${prize}YP獲得！`;
     } else {
-      message += `ハズレ。 (現在: ${currentPoints}YP)`;
+      message += `ハズレ。`;
+    }
+
+    message += ` (現在: ${finalPoints}YP)`;
+    if (allNotifications.length > 0) {
+        // Filter out cost-related notifications if there's a win, to avoid clutter
+        const finalMessages = (betNumber === diceRoll) ? allNotifications.filter(n => !n.includes("称号")) : allNotifications;
+        if(finalMessages.length > 0) {
+           message += "\n\n" + finalMessages.join("\n\n");
+        }
     }
 
     await replyToLine(replyToken, message);
@@ -1289,7 +1402,7 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
-    currentPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -totalCost, userId);
+    const { newPoints: pointsAfterCost, notifications } = await addPoints(userId, -totalCost, "gacha_cost");
 
     const results = [];
     const userItemsKey = `${PREFIX_USER_ITEMS}${userId}`;
@@ -1308,7 +1421,11 @@ export default async function handler(req, res) {
     }
 
     const resultMessage = results.map(item => `[${item.rarity}] ${item.name}`).join("\n");
-    const finalMessage = `---啓示---\n${resultMessage}\n----------\n残りの信仰: ${currentPoints}YP`;
+    let finalMessage = `---啓示---\n${resultMessage}\n----------\n残りの信仰: ${pointsAfterCost}YP`;
+
+    if (notifications.length > 0) {
+        finalMessage += "\n\n" + notifications.join("\n\n");
+    }
     await replyToLine(replyToken, finalMessage);
     return res.status(200).end();
   }
@@ -1398,6 +1515,37 @@ export default async function handler(req, res) {
     // 今回は、特に何も返さない仕様とする。
   }
 
+  if (userText === "!missions") {
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyProgressKey = `${PREFIX_MISSION_PROGRESS}${today}:${userId}`;
+    const [dailyProgress, achieved] = await Promise.all([
+        redis.hgetall(dailyProgressKey),
+        redis.smembers(`${PREFIX_USER_ACHIEVEMENTS}${userId}`)
+    ]);
+
+    let replyMessage = "--- 本日のミッション ---\n";
+    for (const mission of Object.values(DAILY_MISSIONS)) {
+        const progress = parseInt(dailyProgress?.[mission.progressKey] || '0', 10);
+        const isCompleted = dailyProgress?.[`${mission.id}_completed`] === '1';
+        const status = isCompleted ? '✅' : '🔲';
+        replyMessage += `${status} ${mission.description} (${progress}/${mission.target})\n`;
+    }
+
+    replyMessage += "\n--- 達成済みの実績 ---\n";
+    if (achieved.length === 0) {
+        replyMessage += "まだありません\n";
+    } else {
+        for (const achievementId of achieved) {
+            const achievement = Object.values(ACHIEVEMENTS).find(a => a.id === achievementId);
+            if (achievement) {
+                replyMessage += `🏆 ${achievement.description}\n`;
+            }
+        }
+    }
+    await replyToLine(replyToken, replyMessage);
+    return res.status(200).end();
+  }
+
   res.status(200).end();
 }
 
@@ -1473,6 +1621,86 @@ async function startEnglishGame(userId, replyToken, precedingMessage = "") {
 
     await replyToLine(replyToken, fullMessage);
 }
+
+// --- ミッション＆実績システム ヘルパー関数 ---
+
+// YPの増減と関連する実績チェックを一括で行う
+async function addPoints(userId, amount, reason = "unknown") {
+    const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
+    const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, amount, userId);
+
+    let notifications = [];
+
+    // 昇格チェック
+    const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
+    if (promotionMessage) {
+        notifications.push(promotionMessage);
+    }
+
+    // プラスの場合のみ累計YP実績をチェック
+    if (amount > 0) {
+        const totalProgressKey = `${PREFIX_USER_TOTALS}${userId}`;
+        const achievementsKey = `${PREFIX_USER_ACHIEVEMENTS}${userId}`;
+        const newTotal = await redis.hincrby(totalProgressKey, 'total_yp_earned', amount);
+
+        for (const achievement of Object.values(ACHIEVEMENTS)) {
+            if (achievement.progressKey === 'total_yp_earned') {
+                const isAchieved = await redis.sismember(achievementsKey, achievement.id);
+                if (!isAchieved && newTotal >= achievement.target) {
+                    await redis.sadd(achievementsKey, achievement.id);
+
+                    // 実績報酬の付与（addPointsを再帰させない）
+                    const pointsAfterAchievement = await redis.zincrby(KEY_LEADERBOARD_POINTS, achievement.reward, userId);
+
+                    let achievementMessage = `🏆 実績解除！\n「${achievement.description}」\n報酬: ${achievement.reward}YP`;
+                    if (achievement.title) {
+                        await redis.sadd(`${PREFIX_USER_ITEMS}${userId}`, `[称号] ${achievement.title}`);
+                        achievementMessage += `\n称号「${achievement.title}」を獲得！`;
+                    }
+                    achievementMessage += ` (現在: ${Math.round(pointsAfterAchievement)}YP)`;
+                    notifications.push(achievementMessage);
+
+                    // 実績報酬による再昇格チェック
+                    const promotionAfterAchievement = await checkPromotion(userId, newPoints, pointsAfterAchievement);
+                    if (promotionAfterAchievement) {
+                        notifications.push(promotionAfterAchievement);
+                    }
+                }
+            }
+        }
+    }
+
+    return { newPoints: Math.round(newPoints), notifications };
+}
+
+// YP以外の進捗（労働回数など）を更新し、ミッション達成をチェック
+async function updateProgress(userId, progressKey) {
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyProgressKey = `${PREFIX_MISSION_PROGRESS}${today}:${userId}`;
+    const newProgress = await redis.hincrby(dailyProgressKey, progressKey, 1);
+    await redis.expire(dailyProgressKey, 86400);
+
+    let notificationMessages = [];
+
+    for (const mission of Object.values(DAILY_MISSIONS)) {
+        if (mission.progressKey === progressKey) {
+            const completedField = `${mission.id}_completed`;
+            const isCompleted = await redis.hget(dailyProgressKey, completedField);
+
+            if (!isCompleted && newProgress >= mission.target) {
+                await redis.hset(dailyProgressKey, completedField, '1');
+
+                // 報酬付与
+                const { newPoints, notifications } = await addPoints(userId, mission.reward, "mission_reward");
+
+                notificationMessages.push(`🎉 デイリーミッション達成！\n「${mission.description}」\n報酬: ${mission.reward}YP (現在: ${newPoints}YP)`);
+                notificationMessages.push(...notifications);
+            }
+        }
+    }
+    return notificationMessages;
+}
+
 
 // LINEへの返信を行う共通関数
 async function replyToLine(replyToken, text, quickReply = null) {
