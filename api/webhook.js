@@ -1151,7 +1151,7 @@ export default async function handler(req, res) {
     let message = `サイコロの目: 「${diceRoll}」！\n`;
 
     if (betNumber === diceRoll) {
-      const prize = betAmount * 6;
+      const prize = betAmount * 10;
       const oldPoints = currentPoints;
       const finalPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, prize, userId);
       message += `的中！ ${prize}YP獲得！ (現在: ${finalPoints}YP)`;
