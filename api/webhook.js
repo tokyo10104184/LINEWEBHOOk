@@ -809,6 +809,47 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (userText.startsWith("!debtadmin")) {
+    const adminUsername = await redis.get(`${PREFIX_USER_NAME}${userId}`);
+    if (adminUsername !== ADMIN_USERNAME) {
+        return res.status(200).end();
+    }
+
+    const parts = userText.split(" ");
+    if (parts.length !== 2) {
+        await replyToLine(replyToken, "コマンド形式: !debtadmin <ユーザー名>");
+        return res.status(200).end();
+    }
+
+    const targetUsername = parts[1];
+
+    let targetUserId = null;
+    let cursor = '0';
+    do {
+        const [newCursor, keys] = await redis.scan(cursor, 'MATCH', `${PREFIX_USER_NAME}*`);
+        cursor = newCursor;
+        for (const key of keys) {
+            const username = await redis.get(key);
+            if (username === targetUsername) {
+                targetUserId = key.substring(PREFIX_USER_NAME.length);
+                break;
+            }
+        }
+        if (targetUserId) break;
+    } while (cursor !== '0');
+
+    if (!targetUserId) {
+        await replyToLine(replyToken, `ユーザー「${targetUsername}」が見つかりません。`);
+        return res.status(200).end();
+    }
+
+    const debtKey = `${PREFIX_USER_DEBT}${targetUserId}`;
+    await redis.del(debtKey);
+
+    await replyToLine(replyToken, `管理者権限で ${targetUsername} の借金をリセットしました。`);
+    return res.status(200).end();
+  }
+
 
   if (userText === "!title") {
       const userPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
