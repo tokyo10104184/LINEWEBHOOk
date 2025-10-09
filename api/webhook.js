@@ -1363,7 +1363,7 @@ export default async function handler(req, res) {
 
     const diceRoll = Math.floor(Math.random() * 6) + 1;
     let message = `サイコロの目: 「${diceRoll}」！\n`;
-    let finalPoints = pointsAfterBet;
+    let finalPoints;
     let allNotifications = [...betNotifications];
 
     if (betNumber === diceRoll) {
@@ -1373,6 +1373,7 @@ export default async function handler(req, res) {
       allNotifications.push(...prizeNotifications);
       message += `的中！ ${prize}YP獲得！`;
     } else {
+      finalPoints = pointsAfterBet;
       message += `ハズレ。`;
     }
 
@@ -1396,6 +1397,14 @@ export default async function handler(req, res) {
     if (isNaN(amount) || amount <= 0) {
       await replyToLine(replyToken, "借り入れは正の整数で指定してください。");
       return res.status(200).end();
+    }
+
+    const currentUserPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
+    const maxBorrowAmount = Math.floor(currentUserPoints / 2);
+
+    if (amount > maxBorrowAmount) {
+        await replyToLine(replyToken, `借り入れは所持YPの半分までです。(最大: ${maxBorrowAmount}YP)`);
+        return res.status(200).end();
     }
 
     const debtKey = `${PREFIX_USER_DEBT}${userId}`;
@@ -1443,12 +1452,18 @@ export default async function handler(req, res) {
     const { newPoints, notifications } = await addPoints(userId, -repayAmount, "repay");
     const remainingDebt = await redis.decrby(debtKey, repayAmount);
 
+    let replyMessage;
     if (remainingDebt <= 0) {
       await redis.del(debtKey);
-      await replyToLine(replyToken, `${repayAmount}YP返済し、借金がなくなりました。\n現在のYP: ${newPoints}YP`);
+      replyMessage = `${repayAmount}YP返済し、借金がなくなりました。\n現在のYP: ${newPoints}YP`;
     } else {
-      await replyToLine(replyToken, `${repayAmount}YP返済しました。\n残りの借金: ${remainingDebt}YP\n現在のYP: ${newPoints}YP`);
+      replyMessage = `${repayAmount}YP返済しました。\n残りの借金: ${remainingDebt}YP\n現在のYP: ${newPoints}YP`;
     }
+
+    if (notifications.length > 0) {
+        replyMessage += "\n\n" + notifications.join("\n\n");
+    }
+    await replyToLine(replyToken, replyMessage);
     return res.status(200).end();
   }
 
