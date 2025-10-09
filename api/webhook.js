@@ -11,6 +11,8 @@ const PREFIX_USER_NAME = 'username:'; // ユーザー名を保存するキーの
 const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレフィックス
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
 const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
+const PREFIX_STUDY_START_TIME = 'study_start_time:'; // 勉強開始時刻を保存するキーのプレフィックス
+const PREFIX_STUDY_PENDING_SESSION = 'study_pending_session:'; // 勉強の保留中セッション情報を保存するキー
 
 const ADMIN_USERNAME = "Ikemen1015";
 
@@ -492,14 +494,112 @@ export default async function handler(req, res) {
   }
 
   const event = req.body.events[0];
-  if (!event || !event.replyToken || !event.message || !event.message.text) {
+  if (!event || !event.replyToken || !event.message) {
     console.error("Invalid event structure:", event);
     return res.status(400).send("Bad Request: Invalid event structure");
   }
 
-  const userText = event.message.text;
   const replyToken = event.replyToken;
-  const userId = event.source.userId; // ユーザーIDを取得
+  const userId = event.source.userId;
+
+  // 画像メッセージの処理
+  if (event.message.type === 'image') {
+    const pendingSessionKey = `${PREFIX_STUDY_PENDING_SESSION}${userId}`;
+    const sessionDataJSON = await redis.get(pendingSessionKey);
+
+    if (sessionDataJSON) {
+        const sessionData = JSON.parse(sessionDataJSON);
+        const messageId = event.message.id;
+
+        try {
+            const imageResponse = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+                headers: { "Authorization": `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` }
+            });
+            if (!imageResponse.ok) {
+                throw new Error(`LINEからの画像取得に失敗: ${imageResponse.statusText}`);
+            }
+            const imageBuffer = await imageResponse.arrayBuffer();
+            const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+
+            const visionSystemPrompt = `あなたはユーザーの学習努力を評価するAIです。提供された画像を見て、学習の「努力」と「量」を総合的に判断し、1から10000の間でボーナスポイントを決定してください。評価の内訳と最終的なボーナスポイントを、必ず以下のJSON形式で返してください。他のテキストは含めないでください。
+例:
+{
+  "evaluation": "ノートがびっしりと埋まっており、非常に努力している様子が伺えます。素晴らしい集中力です。",
+  "bonus": 7500
+}`;
+
+            const visionResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: "openai/gpt-4o",
+                    messages: [
+                        { role: "system", content: visionSystemPrompt },
+                        {
+                            role: "user",
+                            content: [
+                                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+                                { type: "text", text: "この学習の証を評価してください。" }
+                            ]
+                        }
+                    ],
+                    response_format: { "type": "json_object" }
+                })
+            });
+
+            if (!visionResponse.ok) {
+                const errorText = await visionResponse.text();
+                console.error(`Vision API error: ${visionResponse.status} ${visionResponse.statusText}`, errorText);
+                throw new Error("AIの評価中にエラーが発生しました。");
+            }
+
+            const visionResult = await visionResponse.json();
+            let bonusPoints = 0;
+            let evaluationText = "AIによる評価は言葉になりませんでした。";
+
+            if (visionResult.bonus && visionResult.evaluation) {
+                bonusPoints = parseInt(visionResult.bonus, 10);
+                evaluationText = visionResult.evaluation;
+
+                if (isNaN(bonusPoints) || bonusPoints < 1 || bonusPoints > 10000) {
+                    console.error("Bonus points out of range or NaN:", bonusPoints);
+                    bonusPoints = 1;
+                    evaluationText += " (ポイントの解析に失敗したため、最低ボーナスが付与されました)";
+                }
+            } else {
+                 throw new Error("AIからの応答が不正な形式です。");
+            }
+
+            const basePoints = sessionData.duration * 5;
+            const totalPoints = basePoints + bonusPoints;
+            const { newPoints, notifications } = await addPoints(userId, totalPoints, "study_ai");
+
+            let finalMessage = `--- AIの神託 ---\n評価: ${evaluationText}\n\n基本報酬: ${basePoints}YP\nAIボーナス: ${bonusPoints}YP\n合計: ${totalPoints}YP を獲得しました！\n(現在: ${newPoints}YP)`;
+
+            if (notifications.length > 0) {
+                finalMessage += "\n\n" + notifications.join("\n\n");
+            }
+
+            await replyToLine(replyToken, finalMessage);
+            await redis.del(pendingSessionKey);
+
+        } catch (error) {
+            console.error("Error in study image processing:", error);
+            await replyToLine(replyToken, `エラーが発生しました: ${error.message} もう一度お試しください。`);
+            await redis.del(pendingSessionKey);
+        }
+    }
+    return res.status(200).end();
+  }
+
+  // これ以降はテキストメッセージのみを処理
+  if (event.message.type !== 'text') {
+    return res.status(200).end();
+  }
+  const userText = event.message.text;
 
   // --- 英単語ゲームの回答処理 ---
   const gameKey = `${PREFIX_ENGLISH_GAME}${userId}`;
@@ -1680,6 +1780,93 @@ export default async function handler(req, res) {
     // ユーザーに何かフィードバックを返すのが親切かもしれない。
     // 例: await replyToLine(replyToken, "御用であれば、わが名 (!ai) と共にお呼びください。");
     // 今回は、特に何も返さない仕様とする。
+  }
+
+  // --- 勉強モードコマンド ---
+  if (userText === "!studystart") {
+    const studyKey = `${PREFIX_STUDY_START_TIME}${userId}`;
+    const existingStartTime = await redis.get(studyKey);
+
+    if (existingStartTime) {
+      await replyToLine(replyToken, "既に勉強時間測定中です。終了するには「!studyend」と入力してください。");
+    } else {
+      await redis.set(studyKey, Date.now());
+      await replyToLine(replyToken, "勉強時間の測定を開始しました。頑張ってください！\n終了時に「!studyend」と入力すると、時間に応じたYPを獲得できます。");
+    }
+    return res.status(200).end();
+  }
+
+  if (userText === "!studyend") {
+    const studyKey = `${PREFIX_STUDY_START_TIME}${userId}`;
+    const startTime = await redis.get(studyKey);
+
+    if (!startTime) {
+      await replyToLine(replyToken, "勉強時間は測定されていません。「!studystart」で測定を開始してください。");
+      return res.status(200).end();
+    }
+
+    await redis.del(studyKey); // 開始キーを削除
+
+    const endTime = Date.now();
+    const durationInMinutes = Math.floor((endTime - parseInt(startTime, 10)) / 60000);
+
+    if (durationInMinutes < 1) {
+      await replyToLine(replyToken, "勉強お疲れ様でした！1分未満の勉強はポイント付与の対象外となります。");
+      return res.status(200).end();
+    }
+
+    // セッション情報を一時保存（5分間有効）
+    const pendingSessionKey = `${PREFIX_STUDY_PENDING_SESSION}${userId}`;
+    await redis.set(pendingSessionKey, JSON.stringify({ duration: durationInMinutes }), 'EX', 300);
+
+    const basePoints = durationInMinutes * 5;
+
+    await replyToLine(replyToken, `勉強お疲れ様でした！\n\n勉強時間: ${durationInMinutes}分\n基本報酬: ${basePoints}YP\n\n報酬の受け取り方を選んでください。`, {
+      items: [
+        { type: "action", action: { type: "message", label: `そのまま終了 (${basePoints}YP)`, text: "!study_finish_normal" } },
+        { type: "action", action: { type: "message", label: "写真でAIボーナスを狙う", text: "!study_finish_with_photo" } }
+      ]
+    });
+    return res.status(200).end();
+  }
+
+  if (userText === "!study_finish_normal") {
+    const pendingSessionKey = `${PREFIX_STUDY_PENDING_SESSION}${userId}`;
+    const sessionDataJSON = await redis.get(pendingSessionKey);
+
+    if (!sessionDataJSON) {
+      await replyToLine(replyToken, "タイムアウトしました。もう一度「!studyend」からやり直してください。");
+      return res.status(200).end();
+    }
+
+    const sessionData = JSON.parse(sessionDataJSON);
+    const basePoints = sessionData.duration * 5;
+
+    const { newPoints, notifications } = await addPoints(userId, basePoints, "study_normal");
+    await redis.del(pendingSessionKey); // セッション情報を削除
+
+    let replyMessage = `勉強報酬として ${basePoints}YP を獲得しました！ (現在: ${newPoints}YP)`;
+    if (notifications.length > 0) {
+        replyMessage += "\n\n" + notifications.join("\n\n");
+    }
+    await replyToLine(replyToken, replyMessage);
+    return res.status(200).end();
+  }
+
+  if (userText === "!study_finish_with_photo") {
+    const pendingSessionKey = `${PREFIX_STUDY_PENDING_SESSION}${userId}`;
+    const sessionDataJSON = await redis.get(pendingSessionKey);
+
+    if (!sessionDataJSON) {
+      await replyToLine(replyToken, "タイムアウトしました。もう一度「!studyend」からやり直してください。");
+      return res.status(200).end();
+    }
+
+    // この後の画像受信のためにセッションキーの有効期限を延長
+    await redis.expire(pendingSessionKey, 300);
+
+    await replyToLine(replyToken, "AIによるボーナスポイントの査定ですね。5分以内に、あなたの頑張りがわかる写真を送信してください。");
+    return res.status(200).end();
   }
 
   if (userText === "!missions") {
