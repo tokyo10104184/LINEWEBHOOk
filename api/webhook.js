@@ -1163,17 +1163,12 @@ export default async function handler(req, res) {
 
     const parts = userText.split(" ");
     if (parts.length !== 3) {
-        await replyToLine(replyToken, "コマンド形式: !pointadmin <ユーザー名> <数値>");
+        await replyToLine(replyToken, "コマンド形式: !pointadmin <ユーザー名> <数値|reset>");
         return res.status(200).end();
     }
 
     const targetUsername = parts[1];
-    const amount = parseInt(parts[2], 10);
-
-    if (isNaN(amount)) {
-        await replyToLine(replyToken, "数値が正しくありません。");
-        return res.status(200).end();
-    }
+    const action = parts[2];
 
     // Find user ID from username
     let targetUserId = null;
@@ -1196,8 +1191,18 @@ export default async function handler(req, res) {
         return res.status(200).end();
     }
 
-    const { newPoints } = await addPoints(targetUserId, amount, "admin");
-    await replyToLine(replyToken, `管理者権限で${targetUsername}のYPを${amount}変更しました。\n新しいYP: ${newPoints}`);
+    if (action.toLowerCase() === 'reset') {
+        await redis.zadd(KEY_LEADERBOARD_POINTS, 0, targetUserId);
+        await replyToLine(replyToken, `管理者権限で ${targetUsername} のYPをリセットしました。\n新しいYP: 0`);
+    } else {
+        const amount = parseInt(action, 10);
+        if (isNaN(amount)) {
+            await replyToLine(replyToken, "コマンドの引数が正しくありません。<数値|reset>");
+            return res.status(200).end();
+        }
+        const { newPoints } = await addPoints(targetUserId, amount, "admin");
+        await replyToLine(replyToken, `管理者権限で${targetUsername}のYPを${amount}変更しました。\n新しいYP: ${newPoints}`);
+    }
     return res.status(200).end();
   }
 
@@ -1209,17 +1214,12 @@ export default async function handler(req, res) {
 
     const parts = userText.split(" ");
     if (parts.length !== 3) {
-        await replyToLine(replyToken, "コマンド形式: !investadmin <ユーザー名> <減らす株数>");
+        await replyToLine(replyToken, "コマンド形式: !investadmin <ユーザー名> <減らす株数|reset>");
         return res.status(200).end();
     }
 
     const targetUsername = parts[1];
-    const amount = parseInt(parts[2], 10);
-
-    if (isNaN(amount) || amount <= 0) {
-        await replyToLine(replyToken, "減らす株数は正の整数で指定してください。");
-        return res.status(200).end();
-    }
+    const action = parts[2];
 
     let targetUserId = null;
     let cursor = '0';
@@ -1242,11 +1242,20 @@ export default async function handler(req, res) {
     }
 
     const userStockKey = `${PREFIX_USER_STOCKS}${targetUserId}`;
-    const currentStocks = parseInt(await redis.get(userStockKey)) || 0;
-    const newStockCount = Math.max(0, currentStocks - amount);
-    await redis.set(userStockKey, newStockCount);
-
-    await replyToLine(replyToken, `管理者権限で${targetUsername}の株を${amount}減らしました。\n新しい保有株数: ${newStockCount}株`);
+    if (action.toLowerCase() === 'reset') {
+        await redis.set(userStockKey, 0);
+        await replyToLine(replyToken, `管理者権限で ${targetUsername} の保有株数をリセットしました。\n新しい保有株数: 0株`);
+    } else {
+        const amount = parseInt(action, 10);
+        if (isNaN(amount) || amount <= 0) {
+            await replyToLine(replyToken, "減らす株数は正の整数で指定してください。");
+            return res.status(200).end();
+        }
+        const currentStocks = parseInt(await redis.get(userStockKey)) || 0;
+        const newStockCount = Math.max(0, currentStocks - amount);
+        await redis.set(userStockKey, newStockCount);
+        await replyToLine(replyToken, `管理者権限で${targetUsername}の株を${amount}減らしました。\n新しい保有株数: ${newStockCount}株`);
+    }
     return res.status(200).end();
   }
 
