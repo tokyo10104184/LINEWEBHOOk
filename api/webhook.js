@@ -12,10 +12,14 @@ const PREFIX_USER_DEBT = 'debt:'; // 借金情報を保存するキーのプレ�
 const PREFIX_ENGLISH_GAME = 'english_game:'; // 英単語ゲームの状態を保存するキーのプレフィックス
 const PREFIX_USER_DIFFICULTY = 'eng_difficulty:'; // 英単語ゲームの難易度を保存するキーのプレフィックス
 
+const ADMIN_USERNAME = "Ikemen1015";
+
 // --- 株価イベント関連の定数 ---
 const KEY_STOCK_EVENT = 'stock_event'; // 株価イベントの詳細を保存するハッシュキー
 const EVENT_CHANCE = 0.05; // 各リクエストでイベントが発生する確率 (5%)
 const EVENT_DURATION_MINUTES = 5; // イベント期間（分）
+const MIN_STOCK_PRICE = 200;
+const MAX_STOCK_PRICE = 500;
 
 const boomReasons = [
     "画期的な新技術が発見された！",
@@ -1061,6 +1065,7 @@ export default async function handler(req, res) {
       items: [
         { type: "action", action: { type: "message", label: "ポイント確認", text: "!point" } },
         { type: "action", action: { type: "message", label: "持ち物確認", text: "!items" } },
+        { type: "action", action: { type: "message", label: "ミッション", text: "!missions" } },
         { type: "action", action: { type: "message", label: "ランキング", text: "!leaderboard" } },
         { type: "action", action: { type: "message", label: "戻る", text: "!economy" } },
       ]
@@ -1103,7 +1108,8 @@ export default async function handler(req, res) {
     if (event && event.expiresAt && now >= parseInt(event.expiresAt, 10)) {
         const basePrice = parseInt(event.basePrice, 10);
         // 基準価格に少しのランダム性を加えて戻す
-        const finalPrice = Math.max(10, Math.round(basePrice * (1 + (Math.random() - 0.5) * 0.1)));
+        let finalPrice = Math.round(basePrice * (1 + (Math.random() - 0.5) * 0.1));
+        finalPrice = Math.max(MIN_STOCK_PRICE, Math.min(finalPrice, MAX_STOCK_PRICE));
         await redis.set(KEY_CURRENT_STOCK_PRICE, finalPrice);
         await redis.del(KEY_STOCK_EVENT);
         event = null; // イベント情報をクリア
@@ -1112,7 +1118,7 @@ export default async function handler(req, res) {
     // 2. イベント中でなければ、確率で新規イベントを開始
     if (!event || !event.type) {
         if (Math.random() < EVENT_CHANCE) {
-            const currentPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+            const currentPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 350;
             const type = Math.random() < 0.5 ? 'boom' : 'bust';
             const reason = type === 'boom'
                 ? boomReasons[Math.floor(Math.random() * boomReasons.length)]
@@ -1129,9 +1135,10 @@ export default async function handler(req, res) {
             event = newEvent; // このリクエストから新イベントを適用
         } else {
             // 3. イベントがない場合は、通常の微小な価格変動
-            let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+            let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 350;
             const changePercent = (Math.random() - 0.5) * 0.02; // 通常変動は±1%に抑制
-            stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
+            stockPrice = Math.round(stockPrice * (1 + changePercent));
+            stockPrice = Math.max(MIN_STOCK_PRICE, Math.min(stockPrice, MAX_STOCK_PRICE));
             await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
             return; // 通常変動後は処理終了
         }
@@ -1139,12 +1146,59 @@ export default async function handler(req, res) {
 
     // 4. イベントが有効な場合（既存または新規）、価格を大きく変動させる
     if (event && event.type) {
-        let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 100;
+        let stockPrice = parseInt(await redis.get(KEY_CURRENT_STOCK_PRICE)) || 350;
         // 急騰時は+10%〜+30%、急落時は-10%〜-30%の範囲で変動
         const changePercent = event.type === 'boom' ? (0.1 + Math.random() * 0.2) : (-0.1 - Math.random() * 0.2);
-        stockPrice = Math.max(10, Math.round(stockPrice * (1 + changePercent)));
+        stockPrice = Math.round(stockPrice * (1 + changePercent));
+        stockPrice = Math.max(MIN_STOCK_PRICE, Math.min(stockPrice, MAX_STOCK_PRICE));
         await redis.set(KEY_CURRENT_STOCK_PRICE, stockPrice);
     }
+  }
+
+  if (userText.startsWith("!pointadmin")) {
+    const adminUsername = await redis.get(`${PREFIX_USER_NAME}${userId}`);
+    if (adminUsername !== ADMIN_USERNAME) {
+        return res.status(200).end(); // 管理者でなければ何もしない
+    }
+
+    const parts = userText.split(" ");
+    if (parts.length !== 3) {
+        await replyToLine(replyToken, "コマンド形式: !pointadmin <ユーザー名> <数値>");
+        return res.status(200).end();
+    }
+
+    const targetUsername = parts[1];
+    const amount = parseInt(parts[2], 10);
+
+    if (isNaN(amount)) {
+        await replyToLine(replyToken, "数値が正しくありません。");
+        return res.status(200).end();
+    }
+
+    // Find user ID from username
+    let targetUserId = null;
+    let cursor = '0';
+    do {
+        const [newCursor, keys] = await redis.scan(cursor, 'MATCH', `${PREFIX_USER_NAME}*`);
+        cursor = newCursor;
+        for (const key of keys) {
+            const username = await redis.get(key);
+            if (username === targetUsername) {
+                targetUserId = key.substring(PREFIX_USER_NAME.length);
+                break;
+            }
+        }
+        if (targetUserId) break;
+    } while (cursor !== '0');
+
+    if (!targetUserId) {
+        await replyToLine(replyToken, `ユーザー「${targetUsername}」が見つかりません。`);
+        return res.status(200).end();
+    }
+
+    const { newPoints } = await addPoints(targetUserId, amount, "admin");
+    await replyToLine(replyToken, `管理者権限で${targetUsername}のYPを${amount}変更しました。\n新しいYP: ${newPoints}`);
+    return res.status(200).end();
   }
 
   if (userText.startsWith("!trade")) {
