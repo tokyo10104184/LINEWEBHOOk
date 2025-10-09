@@ -1201,6 +1201,55 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (userText.startsWith("!investadmin")) {
+    const adminUsername = await redis.get(`${PREFIX_USER_NAME}${userId}`);
+    if (adminUsername !== ADMIN_USERNAME) {
+        return res.status(200).end();
+    }
+
+    const parts = userText.split(" ");
+    if (parts.length !== 3) {
+        await replyToLine(replyToken, "コマンド形式: !investadmin <ユーザー名> <減らす株数>");
+        return res.status(200).end();
+    }
+
+    const targetUsername = parts[1];
+    const amount = parseInt(parts[2], 10);
+
+    if (isNaN(amount) || amount <= 0) {
+        await replyToLine(replyToken, "減らす株数は正の整数で指定してください。");
+        return res.status(200).end();
+    }
+
+    let targetUserId = null;
+    let cursor = '0';
+    do {
+        const [newCursor, keys] = await redis.scan(cursor, 'MATCH', `${PREFIX_USER_NAME}*`);
+        cursor = newCursor;
+        for (const key of keys) {
+            const username = await redis.get(key);
+            if (username === targetUsername) {
+                targetUserId = key.substring(PREFIX_USER_NAME.length);
+                break;
+            }
+        }
+        if (targetUserId) break;
+    } while (cursor !== '0');
+
+    if (!targetUserId) {
+        await replyToLine(replyToken, `ユーザー「${targetUsername}」が見つかりません。`);
+        return res.status(200).end();
+    }
+
+    const userStockKey = `${PREFIX_USER_STOCKS}${targetUserId}`;
+    const currentStocks = parseInt(await redis.get(userStockKey)) || 0;
+    const newStockCount = Math.max(0, currentStocks - amount);
+    await redis.set(userStockKey, newStockCount);
+
+    await replyToLine(replyToken, `管理者権限で${targetUsername}の株を${amount}減らしました。\n新しい保有株数: ${newStockCount}株`);
+    return res.status(200).end();
+  }
+
   if (userText.startsWith("!trade")) {
     let currentStockPrice;
     const parts = userText.split(" ");
@@ -1247,9 +1296,14 @@ export default async function handler(req, res) {
             await replyToLine(replyToken, `YPが不足しています。(${amount}株: ${cost}YP, 保有: ${userCurrentPoints}YP)`);
             return res.status(200).end();
           }
-          const { newPoints } = await addPoints(userId, -cost, "trade_buy");
+          const { newPoints, notifications } = await addPoints(userId, -cost, "trade_buy");
           userStockCount = await redis.incrby(userStockKey, amount);
-          await replyToLine(replyToken, `${amount}株を${cost}YPで購入しました。\n保有株数: ${userStockCount}株\n残YP: ${newPoints}YP`);
+
+          let replyMessage = `${amount}株を${cost}YPで購入しました。\n保有株数: ${userStockCount}株\n残YP: ${newPoints}YP`;
+          if (notifications.length > 0) {
+              replyMessage += "\n\n" + notifications.join("\n\n");
+          }
+          await replyToLine(replyToken, replyMessage);
           return res.status(200).end();
         }
 
@@ -1324,11 +1378,7 @@ export default async function handler(req, res) {
 
     message += ` (現在: ${finalPoints}YP)`;
     if (allNotifications.length > 0) {
-        // Filter out cost-related notifications if there's a win, to avoid clutter
-        const finalMessages = (betNumber === diceRoll) ? allNotifications.filter(n => !n.includes("称号")) : allNotifications;
-        if(finalMessages.length > 0) {
-           message += "\n\n" + finalMessages.join("\n\n");
-        }
+        message += "\n\n" + allNotifications.join("\n\n");
     }
 
     await replyToLine(replyToken, message);
@@ -1353,13 +1403,11 @@ export default async function handler(req, res) {
     const totalDebt = amount + interest;
 
     const currentDebt = await redis.incrby(debtKey, totalDebt);
-    const oldPoints = parseFloat(await redis.zscore(KEY_LEADERBOARD_POINTS, userId)) || 0;
-    const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, amount, userId);
+    const { newPoints, notifications } = await addPoints(userId, amount, "borrow");
 
     let replyMessage = `${amount}YPを借りました(利子込${totalDebt}YP)。\n現在の借金: ${currentDebt}YP\n現在のYP: ${newPoints}YP`;
-    const promotionMessage = await checkPromotion(userId, oldPoints, newPoints);
-    if (promotionMessage) {
-        replyMessage += `\n\n${promotionMessage}`;
+    if (notifications.length > 0) {
+        replyMessage += "\n\n" + notifications.join("\n\n");
     }
     await replyToLine(replyToken, replyMessage);
     return res.status(200).end();
@@ -1392,7 +1440,7 @@ export default async function handler(req, res) {
     }
 
     const repayAmount = Math.min(amount, currentDebt);
-    const newPoints = await redis.zincrby(KEY_LEADERBOARD_POINTS, -repayAmount, userId);
+    const { newPoints, notifications } = await addPoints(userId, -repayAmount, "repay");
     const remainingDebt = await redis.decrby(debtKey, repayAmount);
 
     if (remainingDebt <= 0) {
